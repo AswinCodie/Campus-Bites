@@ -31,11 +31,13 @@ body {
 
 .s-auth-body {
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px 16px;
 }
 
 .s-auth-body::before {
@@ -64,6 +66,15 @@ body {
   box-shadow: var(--s-shadow);
   padding: 24px;
   animation: s-auth-card-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  margin: auto 0;
+}
+
+@media (max-width: 640px) {
+  .s-auth-body {
+    align-items: flex-start;
+    padding-top: 16px;
+    padding-bottom: 28px;
+  }
 }
 
 .s-brand {
