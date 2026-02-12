@@ -4,6 +4,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 
+require("dotenv").config();
 const connectDB = require('./db');
 const Canteen = require('./Canteen');
 const User = require('./User');

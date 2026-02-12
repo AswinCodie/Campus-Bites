@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 async function connectDB() {
-  const mongoURI = process.env.MONGO_URI || 'mongodb+srv://canteenbites_db:canteen%402025@campusbites.makzk88.mongodb.net/?appName=CAMPUSBITES';
+  const mongoURI = process.env.MONGO_URI;
 
   try {
     await mongoose.connect(mongoURI);
