@@ -1,0 +1,1553 @@
+const API_BASE = window.location.origin;
+function getStudentBasePath() {
+  const pathname = window.location.pathname || '';
+  return pathname.includes('/frontend/') ? '/frontend/student/' : '/student/';
+}
+
+const STUDENT_ROUTES = {
+  login: `${getStudentBasePath()}login.html`,
+  signup: `${getStudentBasePath()}signup.html`,
+  home: `${getStudentBasePath()}home.html`,
+  cart: `${getStudentBasePath()}cart.html`,
+  payment: `${getStudentBasePath()}payment.html`,
+  success: `${getStudentBasePath()}order-success.html`,
+  orders: `${getStudentBasePath()}my-orders.html`,
+  profile: `${getStudentBasePath()}profile.html`
+};
+
+function getCanID() {
+  return localStorage.getItem('canID') || '';
+}
+
+function setCanID(canID) {
+  localStorage.setItem('canID', canID);
+}
+
+function clearCanID() {
+  localStorage.removeItem('canID');
+}
+
+function getAdminEmail() {
+  return localStorage.getItem('adminEmail') || '';
+}
+
+function setAdminEmail(email) {
+  localStorage.setItem('adminEmail', email);
+}
+
+function clearAdminEmail() {
+  localStorage.removeItem('adminEmail');
+}
+
+function getStudentSession() {
+  try {
+    return JSON.parse(localStorage.getItem('studentSession') || 'null');
+  } catch (_) {
+    return null;
+  }
+}
+
+function setStudentSession(session) {
+  localStorage.setItem('studentSession', JSON.stringify(session));
+}
+
+function clearStudentSession() {
+  localStorage.removeItem('studentSession');
+}
+
+function requireCanID() {
+  const canID = getCanID();
+  if (!canID) {
+    alert('Please login first');
+    window.location.href = 'admin-login.html';
+    return null;
+  }
+  return canID;
+}
+
+function requireStudentSession() {
+  const session = getStudentSession();
+  if (!session?.studentID || !session?.canID) {
+    alert('Please login as student first');
+    window.location.href = STUDENT_ROUTES.login;
+    return null;
+  }
+  return session;
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function formatCurrency(value) {
+  return `\u20B9${Number(value || 0).toFixed(2)}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function normalizeImageUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('//')) return `https:${raw}`;
+  if (/^www\./i.test(raw)) return `https://${raw}`;
+  return raw;
+}
+
+function isValidEmail(email) {
+  const value = String(email || '').trim();
+  if (!value || value.length > 254 || value.includes('..')) return false;
+
+  const parts = value.split('@');
+  if (parts.length !== 2) return false;
+
+  const [localPart, domain] = parts;
+  if (!localPart || !domain || localPart.length > 64) return false;
+  if (!/^[A-Za-z0-9._%+-]+$/.test(localPart)) return false;
+  if (!/^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(domain)) return false;
+
+  const labels = domain.split('.');
+  return labels.every((label) => label && !label.startsWith('-') && !label.endsWith('-'));
+}
+
+function isValidPassword(password) {
+  return String(password || '').length >= 8;
+}
+
+function normalizeMobile(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  return digits;
+}
+
+function isValidMobile(value) {
+  return /^\d{10}$/.test(normalizeMobile(value));
+}
+
+function validateAuthPayload(payload, requireCanID = false) {
+  if (requireCanID && !payload.canID) {
+    return 'canID is required';
+  }
+  if (!isValidEmail(payload.email)) {
+    return 'Please enter a valid email address';
+  }
+  if (!isValidPassword(payload.password)) {
+    return 'Password must be at least 8 characters';
+  }
+  return '';
+}
+
+function validateStudentSignupPayload(payload) {
+  if (!payload.canID) return 'canID is required';
+  if (!payload.name) return 'Name is required';
+  if (!payload.classSemester) return 'Class & semester is required';
+  if (!isValidMobile(payload.mobile)) return 'Please enter a valid 10-digit mobile number';
+  if (!isValidEmail(payload.email)) return 'Please enter a valid email address';
+  if (!payload.admissionNumber) return 'Admission number is required';
+  if (!isValidPassword(payload.password)) return 'Password must be at least 8 characters';
+  return '';
+}
+
+function resolveFoodImage(food) {
+  const imageUrl = normalizeImageUrl(food?.imageUrl);
+  if (imageUrl) return imageUrl;
+  return `https://picsum.photos/seed/${encodeURIComponent(food?.name || 'food')}/640/420`;
+}
+
+function normalizeFoodCategory(value) {
+  const category = String(value || '').toLowerCase();
+  if (category === 'drink' || category === 'drinks') return 'drink';
+  if (category === 'snack' || category === 'snacks') return 'snack';
+  return 'food';
+}
+
+function getStudentCart() {
+  const session = getStudentSession();
+  if (!session?.studentID) return [];
+  try {
+    return JSON.parse(localStorage.getItem(`studentCart:${session.studentID}`) || '[]');
+  } catch (_) {
+    return [];
+  }
+}
+
+function setStudentCart(items) {
+  const session = getStudentSession();
+  if (!session?.studentID) return;
+  localStorage.setItem(`studentCart:${session.studentID}`, JSON.stringify(items));
+}
+
+function clearStudentCart() {
+  const session = getStudentSession();
+  if (!session?.studentID) return;
+  localStorage.removeItem(`studentCart:${session.studentID}`);
+}
+
+function getStatusClass(status) {
+  if (status === 'Ready') return 'status-ready';
+  if (status === 'Delivered') return 'status-delivered';
+  return 'status-preparing';
+}
+
+function applyAdminHeaderIdentity(canID) {
+  setText('canIDValue', canID);
+  const email = getAdminEmail();
+  if (email) setText('adminEmailValue', email);
+}
+
+function initAuthPageTransitions() {
+  const page = document.body?.dataset?.page;
+  if (page !== 'login' && page !== 'signup') return;
+
+  document.querySelectorAll('a[data-auth-switch]').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      const href = link.getAttribute('href');
+      if (!href) return;
+      e.preventDefault();
+      document.body.classList.add('is-leaving');
+      setTimeout(() => {
+        window.location.href = href;
+      }, 210);
+    });
+  });
+}
+
+async function safeFetch(url, options = {}) {
+  const response = await fetch(url, options);
+  const raw = await response.text();
+  let data = {};
+
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    data = {};
+  }
+
+  if (!response.ok) {
+    const fallbackMessage = raw && !raw.startsWith('<!DOCTYPE html') ? raw : `Request failed (${response.status})`;
+    throw new Error(data.message || fallbackMessage);
+  }
+  return data;
+}
+
+async function initSignupPage() {
+  const form = document.getElementById('signupForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      collegeName: document.getElementById('collegeName').value.trim(),
+      email: document.getElementById('email').value.trim(),
+      password: document.getElementById('password').value
+    };
+    const validationError = validateAuthPayload(payload);
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+
+    try {
+      const data = await safeFetch(`${API_BASE}/admin/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      setCanID(data.canID);
+      setAdminEmail(payload.email);
+      alert(`Signup successful. Your canID: ${data.canID}`);
+      window.location.href = 'dashboard.html';
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
+async function initLoginPage() {
+  const form = document.getElementById('loginForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      email: document.getElementById('email').value.trim(),
+      password: document.getElementById('password').value
+    };
+    const validationError = validateAuthPayload(payload);
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+
+    try {
+      const data = await safeFetch(`${API_BASE}/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      setCanID(data.canID);
+      setAdminEmail(payload.email);
+      alert(`Login successful. canID: ${data.canID}`);
+      window.location.href = 'dashboard.html';
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
+async function initDashboardPage() {
+  const canID = requireCanID();
+  if (!canID) return;
+
+  applyAdminHeaderIdentity(canID);
+
+  try {
+    const data = await safeFetch(`${API_BASE}/admin/dashboard/${canID}`);
+    const foodCount = data.stats.foodCount || 0;
+    const orderCount = data.stats.orderCount || 0;
+    const studentCount = data.stats.studentCount || 0;
+
+    setText('statMenuItems', foodCount);
+    setText('statOrders', orderCount);
+    setText('statStudents', studentCount);
+
+    const ul = document.getElementById('statsList');
+    if (ul) {
+      ul.innerHTML = '';
+      [
+        ['Total Foods', foodCount],
+        ['Total Orders', orderCount],
+        ['Total Students', studentCount]
+      ].forEach(([k, v]) => {
+        const li = document.createElement('li');
+        li.textContent = `${k}: ${v}`;
+        ul.appendChild(li);
+      });
+    }
+  } catch (error) {
+    alert(error.message);
+  }
+
+  try {
+    const orders = await safeFetch(`${API_BASE}/orders/${canID}`);
+    const revenue = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+    setText('statRevenue', formatCurrency(revenue));
+
+    const tbody = document.getElementById('dashboardRecentOrdersBody');
+    if (!tbody) return;
+
+    const recent = orders.slice(0, 5);
+    if (recent.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5"><p class="empty-hint">No recent orders found.</p></td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = recent.map((order) => {
+      const itemsText = order.items
+        .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+        .join(', ');
+      return `
+        <tr>
+          <td>${order.orderID}</td>
+          <td>${order.studentID?.name || 'Unknown'}</td>
+          <td>${itemsText}</td>
+          <td>${formatCurrency(order.total)}</td>
+          <td><span class="status-badge ${getStatusClass(order.status)}">${order.status}</span></td>
+        </tr>
+      `;
+    }).join('');
+  } catch (_) {
+    setText('statRevenue', formatCurrency(0));
+  }
+}
+
+function renderFoodsTable(foods) {
+  const tbody = document.getElementById('foodTableBody');
+  tbody.innerHTML = '';
+
+  foods.forEach((food) => {
+    const tr = document.createElement('tr');
+    const category = normalizeFoodCategory(food.category);
+    const imageUrl = normalizeImageUrl(food.imageUrl);
+    const name = escapeHtml(food.name);
+
+    tr.innerHTML = `
+      <td>${name}</td>
+      <td>
+        <select data-category-id="${food._id}">
+          <option value="food" ${category === 'food' ? 'selected' : ''}>Food</option>
+          <option value="drink" ${category === 'drink' ? 'selected' : ''}>Drink</option>
+          <option value="snack" ${category === 'snack' ? 'selected' : ''}>Snack</option>
+        </select>
+      </td>
+      <td>
+        <input type="url" value="${escapeHtml(imageUrl)}" placeholder="https://example.com/image.jpg" data-image-id="${food._id}" />
+      </td>
+      <td>
+        <input type="number" min="0" step="0.01" value="${food.price}" data-price-id="${food._id}" />
+      </td>
+      <td><span class="status-badge ${food.inStock ? 'status-ready' : 'status-preparing'}">${food.inStock ? 'In Stock' : 'Out of Stock'}</span></td>
+      <td>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-small" data-action="save" data-id="${food._id}" data-stock="${food.inStock}">Save</button>
+          <button class="btn btn-primary btn-small" data-action="toggle" data-id="${food._id}" data-stock="${food.inStock}">
+            ${food.inStock ? 'Stock Out' : 'Stock In'}
+          </button>
+          <button class="btn btn-danger btn-small" data-action="delete" data-id="${food._id}">Delete</button>
+        </div>
+      </td>
+    `;
+
+    tbody.appendChild(tr);
+  });
+}
+
+async function initMenuPage() {
+  const canID = requireCanID();
+  if (!canID) return;
+
+  applyAdminHeaderIdentity(canID);
+
+  async function loadFoods() {
+    try {
+      const foods = await safeFetch(`${API_BASE}/foods/${canID}`);
+      renderFoodsTable(foods);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  document.getElementById('addFoodForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      canID,
+      name: document.getElementById('foodName').value.trim(),
+      category: document.getElementById('foodCategory').value,
+      imageUrl: normalizeImageUrl(document.getElementById('foodImageUrl').value),
+      price: Number(document.getElementById('foodPrice').value),
+      inStock: document.getElementById('foodStock').checked
+    };
+
+    try {
+      await safeFetch(`${API_BASE}/food/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      alert('Food added');
+      e.target.reset();
+      loadFoods();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  document.getElementById('foodTableBody').addEventListener('click', async (e) => {
+    const button = e.target.closest('button');
+    if (!button) return;
+
+    const action = button.dataset.action;
+    const foodID = button.dataset.id;
+
+    try {
+      if (action === 'delete') {
+        await safeFetch(`${API_BASE}/food/${foodID}`, { method: 'DELETE' });
+        alert('Food deleted');
+      }
+
+      if (action === 'toggle') {
+        const currentStock = button.dataset.stock === 'true';
+        await safeFetch(`${API_BASE}/food/${foodID}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inStock: !currentStock })
+        });
+        alert('Stock updated');
+      }
+
+      if (action === 'save') {
+        const priceInput = document.querySelector(`input[data-price-id="${foodID}"]`);
+        const categoryInput = document.querySelector(`select[data-category-id="${foodID}"]`);
+        const imageInput = document.querySelector(`input[data-image-id="${foodID}"]`);
+        const price = Number(priceInput.value);
+        await safeFetch(`${API_BASE}/food/${foodID}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            price,
+            category: categoryInput?.value || 'food',
+            imageUrl: normalizeImageUrl(imageInput?.value)
+          })
+        });
+        alert('Food updated');
+      }
+
+      loadFoods();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  loadFoods();
+}
+
+function renderStudents(students) {
+  const tbody = document.getElementById('studentsBody');
+  tbody.innerHTML = '';
+
+  students.forEach((student) => {
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    const statusBadge = student.banned 
+      ? '<span class="status-badge status-banned">Banned</span>'
+      : '<span class="status-badge status-active">Active</span>';
+    tr.innerHTML = `
+      <td>${student.name}</td>
+      <td>${student.email}</td>
+      <td>${student.mobile}</td>
+      <td>${student.classSemester}</td>
+      <td>${student.admissionNumber}</td>
+      <td>${statusBadge}</td>
+      <td><button class="btn ${student.banned ? 'btn-success' : 'btn-danger'} btn-small" data-id="${student._id}" onclick="event.stopPropagation()">${student.banned ? 'Unban' : 'Ban'}</button></td>
+    `;
+    tr.addEventListener('click', () => showStudentDetails(student));
+    tbody.appendChild(tr);
+  });
+}
+
+function showStudentDetails(student) {
+  const modal = document.getElementById('studentModal');
+  document.getElementById('modalName').textContent = student.name;
+  document.getElementById('modalEmail').textContent = student.email;
+  document.getElementById('modalMobile').textContent = student.mobile;
+  document.getElementById('modalClassSemester').textContent = student.classSemester;
+  document.getElementById('modalAdmissionNumber').textContent = student.admissionNumber;
+  document.getElementById('modalCanID').textContent = student.canID;
+  document.getElementById('modalStudentID').textContent = student._id;
+  document.getElementById('modalJoined').textContent = new Date(student.createdAt).toLocaleDateString();
+  document.getElementById('modalStatus').textContent = student.banned ? 'Banned' : 'Active';
+  
+  const banBtn = document.getElementById('banStudentBtn');
+  if (student.banned) {
+    banBtn.textContent = 'Unban Student';
+    banBtn.classList.remove('btn-danger');
+    banBtn.classList.add('btn-success');
+  } else {
+    banBtn.textContent = 'Ban Student';
+    banBtn.classList.remove('btn-success');
+    banBtn.classList.add('btn-danger');
+  }
+  
+  modal.dataset.studentId = student._id;
+  modal.style.display = 'flex';
+}
+
+async function initStudentsPage() {
+  const canID = requireCanID();
+  if (!canID) return;
+
+  applyAdminHeaderIdentity(canID);
+
+  const modal = document.getElementById('studentModal');
+  const closeModal = document.getElementById('closeModal');
+  const closeModalBtn = document.getElementById('closeModalBtn');
+  const banStudentBtn = document.getElementById('banStudentBtn');
+
+  async function loadStudents() {
+    try {
+      const students = await safeFetch(`${API_BASE}/students/${canID}`);
+      renderStudents(students);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  // Close modal
+  closeModal.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+
+  closeModalBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+
+  // Close modal when clicking outside
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.style.display = 'none';
+    }
+  });
+
+  // Ban/Unban student
+  banStudentBtn.addEventListener('click', async () => {
+    const studentId = modal.dataset.studentId;
+    if (!studentId) return;
+
+    const action = banStudentBtn.textContent.includes('Ban') ? 'ban' : 'unban';
+    if (!confirm(`Are you sure you want to ${action} this student?`)) return;
+
+    try {
+      const response = await safeFetch(`${API_BASE}/student/${studentId}/ban`, { 
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      alert(response.message);
+      modal.style.display = 'none';
+      loadStudents();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  loadStudents();
+}
+
+function renderOrders(orders) {
+  const tbody = document.getElementById('ordersBody');
+  tbody.innerHTML = '';
+
+  orders.forEach((order) => {
+    const itemsText = order.items
+      .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+      .join(', ');
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${order.orderID}</td>
+      <td>${order.studentID?.name || 'Unknown'}</td>
+      <td>${itemsText}</td>
+      <td>${formatCurrency(order.total)}</td>
+      <td><span class="status-badge ${getStatusClass(order.status)}">${order.status}</span></td>
+      <td>
+        <div class="btn-group">
+          <button class="btn btn-small ${order.status === 'Preparing' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Preparing">Preparing</button>
+          <button class="btn btn-small ${order.status === 'Ready' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Ready">Ready</button>
+          <button class="btn btn-small ${order.status === 'Delivered' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Delivered">Delivered</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function initOrdersPage() {
+  const canID = requireCanID();
+  if (!canID) return;
+
+  applyAdminHeaderIdentity(canID);
+  let isLoadingOrders = false;
+  let ordersPollTimer = null;
+
+  async function loadOrders() {
+    if (isLoadingOrders) return;
+    isLoadingOrders = true;
+    try {
+      const orders = await safeFetch(`${API_BASE}/orders/${canID}`);
+      renderOrders(orders);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      isLoadingOrders = false;
+    }
+  }
+
+  document.getElementById('ordersBody').addEventListener('click', async (e) => {
+    const button = e.target.closest('button');
+    if (!button) return;
+
+    try {
+      await safeFetch(`${API_BASE}/order/${button.dataset.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: button.dataset.status })
+      });
+      alert('Order status updated');
+      loadOrders();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  loadOrders();
+  ordersPollTimer = setInterval(loadOrders, 5000);
+
+  window.addEventListener('beforeunload', () => {
+    if (ordersPollTimer) clearInterval(ordersPollTimer);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      loadOrders();
+    }
+  });
+}
+
+async function initAnalyticsPage() {
+  const canID = requireCanID();
+  if (!canID) return;
+  applyAdminHeaderIdentity(canID);
+
+  try {
+    const {
+      stats = {},
+      revenueTrend = [],
+      ordersByStatus = [],
+      topMenuItems = []
+    } = await safeFetch(`${API_BASE}/admin/analytics/${canID}`);
+    const statCards = document.querySelectorAll('.stat-card .stat-value');
+
+    if (statCards.length === 4) {
+      statCards[0].textContent = formatCurrency(stats.monthlySales);
+      statCards[1].textContent = formatCurrency(stats.avgOrderValue);
+      statCards[2].textContent = stats.topSellingItem || 'N/A';
+      statCards[3].textContent = String(stats.ordersToday || 0);
+    }
+
+    const revenueTrendList = document.getElementById('revenueTrendList');
+    if (revenueTrendList) {
+      if (!revenueTrend.length) {
+        revenueTrendList.innerHTML = '<li class="analytics-empty">No sales this month yet.</li>';
+      } else {
+        const maxRevenue = Math.max(...revenueTrend.map((entry) => Number(entry.total || 0)), 1);
+        revenueTrendList.innerHTML = revenueTrend.map((entry) => {
+          const total = Number(entry.total || 0);
+          const barWidth = Math.max((total / maxRevenue) * 100, 2);
+          return `
+            <li class="analytics-row">
+              <span class="analytics-key">Day ${entry.day}</span>
+              <span class="analytics-bar-wrap"><span class="analytics-bar" style="width:${barWidth}%"></span></span>
+              <span class="analytics-value">${formatCurrency(total)}</span>
+            </li>
+          `;
+        }).join('');
+      }
+    }
+
+    const ordersStatusList = document.getElementById('ordersStatusList');
+    if (ordersStatusList) {
+      if (!ordersByStatus.length) {
+        ordersStatusList.innerHTML = '<li class="analytics-empty">No orders found.</li>';
+      } else {
+        const maxCount = Math.max(...ordersByStatus.map((entry) => Number(entry.count || 0)), 1);
+        ordersStatusList.innerHTML = ordersByStatus.map((entry) => {
+          const count = Number(entry.count || 0);
+          const barWidth = Math.max((count / maxCount) * 100, 2);
+          return `
+            <li class="analytics-row">
+              <span class="analytics-key">${escapeHtml(entry.status || 'Unknown')}</span>
+              <span class="analytics-bar-wrap"><span class="analytics-bar" style="width:${barWidth}%"></span></span>
+              <span class="analytics-value">${count}</span>
+            </li>
+          `;
+        }).join('');
+      }
+    }
+
+    const topItemsBody = document.getElementById('topItemsBody');
+    if (topItemsBody) {
+      if (!topMenuItems.length) {
+        topItemsBody.innerHTML = '<tr><td colspan="2" class="analytics-empty">No item sales yet.</td></tr>';
+      } else {
+        topItemsBody.innerHTML = topMenuItems.map((item) => `
+          <tr>
+            <td>${escapeHtml(item.name || 'Unknown')}</td>
+            <td>${Number(item.quantity || 0)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function initStudentSignupPage() {
+  const form = document.getElementById('studentSignupForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      canID: document.getElementById('canID').value.trim(),
+      name: document.getElementById('name').value.trim(),
+      classSemester: document.getElementById('classSemester').value.trim(),
+      mobile: normalizeMobile(document.getElementById('mobile').value),
+      email: document.getElementById('email').value.trim(),
+      admissionNumber: document.getElementById('admissionNumber').value.trim().toUpperCase(),
+      password: document.getElementById('password').value
+    };
+    const validationError = validateStudentSignupPayload(payload);
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+
+    try {
+      const data = await safeFetch(`${API_BASE}/student/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      setStudentSession({
+        studentID: data.student._id,
+        canID: data.student.canID,
+        name: data.student.name,
+        classSemester: data.student.classSemester,
+        mobile: data.student.mobile,
+        email: data.student.email,
+        admissionNumber: data.student.admissionNumber,
+        banned: data.student.banned
+      });
+
+      alert('Student signup successful');
+      window.location.href = STUDENT_ROUTES.home;
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
+async function initStudentLoginPage() {
+  const form = document.getElementById('studentLoginForm');
+  const identifierInput = document.getElementById('studentIdentifier');
+  if (!form || !identifierInput) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const identifier = identifierInput.value.trim();
+    const loginWith = isValidMobile(normalizeMobile(identifier)) ? 'mobile' : 'email';
+    const payload = {
+      loginWith,
+      identifier,
+      password: document.getElementById('password').value
+    };
+    if (loginWith === 'mobile' && !isValidMobile(normalizeMobile(identifier))) return alert('Please enter a valid 10-digit mobile number');
+    if (loginWith === 'email' && !isValidEmail(identifier)) return alert('Please enter a valid email address');
+    if (!isValidPassword(payload.password)) return alert('Password must be at least 8 characters');
+
+    try {
+      const data = await safeFetch(`${API_BASE}/student/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      setStudentSession({
+        studentID: data.student._id,
+        canID: data.student.canID,
+        name: data.student.name,
+        classSemester: data.student.classSemester,
+        mobile: data.student.mobile,
+        email: data.student.email,
+        admissionNumber: data.student.admissionNumber,
+        banned: data.student.banned
+      });
+
+      alert('Student login successful');
+      window.location.href = STUDENT_ROUTES.home;
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
+function renderStudentMenu(foods) {
+  const container = document.getElementById('studentMenuBody');
+  if (!container) return;
+
+  if (!foods.length) {
+    container.innerHTML = '<div class="empty-block">No menu items available right now.</div>';
+    return;
+  }
+
+  container.innerHTML = foods.map((food) => `
+    <article class="menu-card" data-food-card data-food-id="${food._id}" data-food-name="${escapeHtml(food.name)}" data-food-price="${Number(food.price || 0)}" data-food-stock="${food.inStock}">
+      <img
+        class="menu-image"
+        src="${escapeHtml(resolveFoodImage(food))}"
+        alt="${escapeHtml(food.name)}"
+        loading="lazy"
+      />
+      <div class="menu-card-body">
+        <div class="menu-head">
+          <div>
+            <h3 class="food-name">${escapeHtml(food.name)}</h3>
+            <p class="food-price">${formatCurrency(food.price)}</p>
+          </div>
+          <span class="chip ${food.inStock ? 'chip-stock' : 'chip-out'}">${food.inStock ? 'In Stock' : 'Out of Stock'}</span>
+        </div>
+
+        <div class="qty-row">
+          <button class="qty-btn" type="button" data-action="qty-dec" ${food.inStock ? '' : 'disabled'} aria-label="Decrease quantity">-</button>
+          <input
+            class="qty-input"
+            type="number"
+            min="0"
+            step="1"
+            value="0"
+            data-food-id="${food._id}"
+            ${food.inStock ? '' : 'disabled'}
+            aria-label="${escapeHtml(food.name)} quantity"
+          />
+          <button class="qty-btn" type="button" data-action="qty-inc" ${food.inStock ? '' : 'disabled'} aria-label="Increase quantity">+</button>
+        </div>
+
+        <div class="menu-actions">
+          <button class="btn btn-primary" type="button" data-action="add-to-cart" ${food.inStock ? '' : 'disabled'}>Add to Cart</button>
+        </div>
+      </div>
+    </article>
+  `).join('');
+}
+
+function renderStudentOrders(orders) {
+  const container = document.getElementById('studentOrdersBody');
+  if (!container) return;
+
+  if (!orders.length) {
+    container.innerHTML = '<div class="empty-block">You have not placed any orders yet.</div>';
+    return;
+  }
+
+  container.innerHTML = orders.map((order) => {
+    const itemsText = order.items
+      .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+      .join(', ');
+    const statusClass = order.status === 'Ready'
+      ? 'chip-ready'
+      : order.status === 'Delivered'
+        ? 'chip-delivered'
+        : 'chip-preparing';
+
+    return `
+      <article class="order-card">
+        <div class="order-top">
+          <p class="order-id">Order ID: ${order.orderID}</p>
+          <span class="chip ${statusClass}">${order.status}</span>
+        </div>
+        <p class="order-items">${itemsText}</p>
+        <p class="order-total">Total: ${formatCurrency(order.total)}</p>
+      </article>
+    `;
+  }).join('');
+}
+
+async function initStudentPortalPage() {
+  const session = requireStudentSession();
+  if (!session) return;
+
+  setText('studentNameValue', session.name);
+  setText('studentCanIDValue', session.canID);
+  const menuContainer = document.getElementById('studentMenuBody');
+  const cartContainer = document.getElementById('cartItemsBody');
+  const cartTotalValue = document.getElementById('cartTotalValue');
+  const placeOrderBtn = document.getElementById('placeOrderBtn');
+
+  let cart = [];
+  let isLoadingOrders = false;
+  let ordersPollTimer = null;
+
+  function renderCart() {
+    if (!cartContainer || !cartTotalValue || !placeOrderBtn) return;
+
+    if (cart.length === 0) {
+      cartContainer.innerHTML = '<div class="empty-block">Your cart is empty. Add items from the menu.</div>';
+      cartTotalValue.textContent = formatCurrency(0);
+      placeOrderBtn.textContent = 'Place Order';
+      return;
+    }
+
+    const total = cart.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+    cartContainer.innerHTML = cart.map((item) => `
+      <article class="cart-item">
+        <div>
+          <p class="cart-item-title">${item.name}</p>
+          <p class="cart-item-meta">${formatCurrency(item.price)} x ${item.quantity}</p>
+        </div>
+        <button class="btn btn-soft" type="button" data-action="remove-cart-item" data-id="${item.foodID}">Remove</button>
+      </article>
+    `).join('');
+    cartTotalValue.textContent = formatCurrency(total);
+    placeOrderBtn.textContent = `Place Order - ${formatCurrency(total)}`;
+  }
+
+  async function loadMenu() {
+    try {
+      const foods = await safeFetch(`${API_BASE}/foods/${session.canID}`);
+      renderStudentMenu(foods);
+    } catch (error) {
+      alert(error.message);
+    }
+  }
+
+  async function loadMyOrders() {
+    if (isLoadingOrders) return;
+    isLoadingOrders = true;
+    try {
+      const orders = await safeFetch(`${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`);
+      renderStudentOrders(orders);
+    } catch (_) {
+      // keep polling silently for transient network errors
+    } finally {
+      isLoadingOrders = false;
+    }
+  }
+
+  menuContainer.addEventListener('click', (e) => {
+    const button = e.target.closest('button');
+    if (!button) return;
+
+    const card = button.closest('[data-food-card]');
+    if (!card) return;
+
+    const qtyInput = card.querySelector('input[data-food-id]');
+    if (!qtyInput) return;
+
+    if (button.dataset.action === 'qty-inc') {
+      qtyInput.value = String(Number(qtyInput.value || 0) + 1);
+      return;
+    }
+
+    if (button.dataset.action === 'qty-dec') {
+      qtyInput.value = String(Math.max(0, Number(qtyInput.value || 0) - 1));
+      return;
+    }
+
+    if (button.dataset.action === 'add-to-cart') {
+      const quantity = Number(qtyInput.value);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        alert('Please select a quantity greater than 0');
+        return;
+      }
+
+      const foodID = card.dataset.foodId;
+      const name = card.dataset.foodName;
+      const price = Number(card.dataset.foodPrice);
+      const existing = cart.find((item) => item.foodID === foodID);
+      if (existing) {
+        existing.quantity += quantity;
+      } else {
+        cart.push({ foodID, name, price, quantity });
+      }
+
+      qtyInput.value = '0';
+      renderCart();
+    }
+  });
+
+  cartContainer.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-action="remove-cart-item"]');
+    if (!button) return;
+    cart = cart.filter((item) => item.foodID !== button.dataset.id);
+    renderCart();
+  });
+
+  placeOrderBtn.addEventListener('click', async () => {
+    const items = cart.map((item) => ({
+      foodID: item.foodID,
+      quantity: Number(item.quantity)
+    })).filter((item) => item.quantity > 0);
+
+    if (!items.length) {
+      alert('Please select at least one item');
+      return;
+    }
+
+    try {
+      await safeFetch(`${API_BASE}/order/place`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          canID: session.canID,
+          studentID: session.studentID,
+          items
+        })
+      });
+      alert('Order placed');
+      cart = [];
+      renderCart();
+      await loadMenu();
+      await loadMyOrders();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  renderCart();
+  loadMenu();
+  loadMyOrders();
+  ordersPollTimer = setInterval(loadMyOrders, 5000);
+
+  window.addEventListener('beforeunload', () => {
+    if (ordersPollTimer) clearInterval(ordersPollTimer);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      loadMyOrders();
+    }
+  });
+}
+
+function renderStudentHomeFoods(foods) {
+  const grid = document.getElementById('studentHomeFoodsGrid');
+  if (!grid) return;
+
+  if (!foods.length) {
+    grid.innerHTML = '<div class="s-card s-empty">No items match this filter.</div>';
+    return;
+  }
+
+  grid.innerHTML = foods.map((food) => `
+    <article class="s-card s-food-card">
+      <img
+        class="s-food-image"
+        src="${escapeHtml(resolveFoodImage(food))}"
+        alt="${escapeHtml(food.name)}"
+        loading="lazy"
+      />
+      <div class="s-food-body">
+        <div class="s-food-head">
+          <h3>${escapeHtml(food.name)}</h3>
+          <span class="s-chip ${food.inStock ? 's-chip-success' : 's-chip-danger'}">${food.inStock ? 'Available' : 'Out of Stock'}</span>
+        </div>
+        <div class="s-food-foot">
+          <p class="s-price">${formatCurrency(food.price)}</p>
+          <button class="s-btn s-btn-primary s-btn-cart" data-action="add" data-id="${food._id}" ${food.inStock ? '' : 'disabled'}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 7H6.2"/></svg>
+          </button>
+        </div>
+      </div>
+    </article>
+  `).join('');
+}
+
+function updateStudentCartBadge(animate = false) {
+  const badge = document.getElementById('studentCartCount');
+  if (!badge) return;
+  const count = getStudentCart().reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  badge.textContent = String(count);
+  if (animate) {
+    badge.classList.remove('is-bumped');
+    void badge.offsetWidth;
+    badge.classList.add('is-bumped');
+  }
+}
+
+async function initStudentHomePage() {
+  const session = requireStudentSession();
+  if (!session) return;
+
+  // Check if student is banned
+  if (session.banned) {
+    alert('Your account has been banned. Please contact support.');
+    clearStudentSession();
+    window.location.href = STUDENT_ROUTES.login;
+    return;
+  }
+
+  setText('studentNameValue', session.name);
+  setText('studentCanIDValue', session.canID);
+  updateStudentCartBadge();
+
+  const searchInput = document.getElementById('studentSearchInput');
+  const filterWrap = document.getElementById('studentFilterGroup');
+  let allFoods = [];
+  let activeCategory = 'all';
+  let query = '';
+
+  function classifyFood(food) {
+    return normalizeFoodCategory(food.category);
+  }
+
+  function applyFilters() {
+    const filtered = allFoods.filter((food) => {
+      const category = classifyFood(food);
+      const categoryMatch = activeCategory === 'all' || activeCategory === category;
+      const searchMatch = !query || food.name.toLowerCase().includes(query);
+      return categoryMatch && searchMatch;
+    });
+    renderStudentHomeFoods(filtered);
+  }
+
+  try {
+    allFoods = await safeFetch(`${API_BASE}/foods/${session.canID}`);
+    applyFilters();
+  } catch (error) {
+    alert(error.message);
+  }
+
+  filterWrap?.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-filter]');
+    if (!button) return;
+    activeCategory = button.dataset.filter;
+    filterWrap.querySelectorAll('button[data-filter]').forEach((b) => b.classList.remove('is-active'));
+    button.classList.add('is-active');
+    applyFilters();
+  });
+
+  searchInput?.addEventListener('input', () => {
+    query = searchInput.value.trim().toLowerCase();
+    applyFilters();
+  });
+
+  document.getElementById('studentHomeFoodsGrid')?.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-action="add"]');
+    if (!button) return;
+
+    const food = allFoods.find((item) => item._id === button.dataset.id);
+    if (!food || !food.inStock) return;
+
+    const cart = getStudentCart();
+    const existing = cart.find((item) => item.foodID === food._id);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      cart.push({
+        foodID: food._id,
+        name: food.name,
+        price: Number(food.price || 0),
+        quantity: 1
+      });
+    }
+    setStudentCart(cart);
+    button.classList.remove('is-added');
+    void button.offsetWidth;
+    button.classList.add('is-added');
+    updateStudentCartBadge(true);
+  });
+}
+
+function renderCartPage() {
+  const items = getStudentCart();
+  const list = document.getElementById('studentCartItems');
+  const subtotalEl = document.getElementById('cartSubtotal');
+  const totalEl = document.getElementById('cartTotal');
+  const proceedBtn = document.getElementById('proceedToPaymentBtn');
+  const subtotal = items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
+  const total = subtotal;
+
+  if (list) {
+    if (!items.length) {
+      list.innerHTML = '<div class="s-card s-empty">Your cart is empty.</div>';
+    } else {
+      list.innerHTML = items.map((item) => `
+        <article class="s-card s-cart-item">
+          <div>
+            <h3>${item.name}</h3>
+            <p>${formatCurrency(item.price)} each</p>
+          </div>
+          <div class="s-cart-actions">
+            <button class="s-icon-btn" data-action="dec" data-id="${item.foodID}">-</button>
+            <span>${item.quantity}</span>
+            <button class="s-icon-btn" data-action="inc" data-id="${item.foodID}">+</button>
+            <button class="s-btn s-btn-ghost" data-action="remove" data-id="${item.foodID}">Remove</button>
+          </div>
+        </article>
+      `).join('');
+    }
+  }
+
+  if (subtotalEl) subtotalEl.textContent = formatCurrency(subtotal);
+  if (totalEl) totalEl.textContent = formatCurrency(total);
+  if (proceedBtn) proceedBtn.disabled = items.length === 0;
+}
+
+async function initStudentCartPage() {
+  const session = requireStudentSession();
+  if (!session) return;
+  setText('studentNameValue', session.name);
+
+  renderCartPage();
+  updateStudentCartBadge();
+
+  document.getElementById('studentCartItems')?.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-id]');
+    if (!button) return;
+
+    let cart = getStudentCart();
+    const item = cart.find((it) => it.foodID === button.dataset.id);
+    if (!item) return;
+
+    if (button.dataset.action === 'inc') item.quantity += 1;
+    if (button.dataset.action === 'dec') item.quantity = Math.max(1, item.quantity - 1);
+    if (button.dataset.action === 'remove') cart = cart.filter((it) => it.foodID !== button.dataset.id);
+
+    setStudentCart(cart);
+    renderCartPage();
+    updateStudentCartBadge();
+  });
+
+  document.getElementById('proceedToPaymentBtn')?.addEventListener('click', () => {
+    window.location.href = STUDENT_ROUTES.payment;
+  });
+}
+
+function renderPaymentSummary() {
+  const items = getStudentCart();
+  const summary = document.getElementById('paymentSummaryItems');
+  const totalEl = document.getElementById('paymentTotal');
+  const subtotal = items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
+  const total = subtotal;
+
+  if (summary) {
+    if (!items.length) {
+      summary.innerHTML = '<div class="s-empty">No items in cart.</div>';
+    } else {
+      summary.innerHTML = items.map((item) => `
+        <div class="s-summary-row">
+          <span>${item.name} x ${item.quantity}</span>
+          <strong>${formatCurrency(Number(item.price) * Number(item.quantity))}</strong>
+        </div>
+      `).join('');
+    }
+  }
+
+  if (totalEl) totalEl.textContent = formatCurrency(total);
+  return { items, total };
+}
+
+async function initStudentPaymentPage() {
+  const session = requireStudentSession();
+  if (!session) return;
+
+  // Check if student is banned
+  if (session.banned) {
+    alert('Your account has been banned. Please contact support.');
+    clearStudentSession();
+    window.location.href = STUDENT_ROUTES.login;
+    return;
+  }
+
+  updateStudentCartBadge();
+  const payBtn = document.getElementById('payNowBtn');
+  const { items } = renderPaymentSummary();
+  if (payBtn) payBtn.disabled = items.length === 0;
+
+  payBtn?.addEventListener('click', async () => {
+    const cart = getStudentCart();
+    if (!cart.length) {
+      alert('Cart is empty');
+      return;
+    }
+
+    try {
+      const response = await safeFetch(`${API_BASE}/order/place`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          canID: session.canID,
+          studentID: session.studentID,
+          items: cart.map((item) => ({
+            foodID: item.foodID,
+            quantity: Number(item.quantity)
+          }))
+        })
+      });
+      localStorage.setItem('studentLastOrderID', response.order?.orderID || '');
+      clearStudentCart();
+      window.location.href = STUDENT_ROUTES.success;
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+}
+
+function initStudentOrderSuccessPage() {
+  const session = requireStudentSession();
+  if (!session) return;
+  const orderID = localStorage.getItem('studentLastOrderID') || 'ORD-PENDING';
+  setText('successOrderID', orderID);
+  updateStudentCartBadge();
+}
+
+async function initStudentOrdersPage() {
+  const session = requireStudentSession();
+  if (!session) return;
+
+  // Check if student is banned
+  if (session.banned) {
+    alert('Your account has been banned. Please contact support.');
+    clearStudentSession();
+    window.location.href = STUDENT_ROUTES.login;
+    return;
+  }
+  const container = document.getElementById('studentOrdersList');
+  updateStudentCartBadge();
+  let isLoadingOrders = false;
+  let ordersPollTimer = null;
+
+  async function loadStudentOrders() {
+    if (isLoadingOrders) return;
+    isLoadingOrders = true;
+    try {
+      const orders = await safeFetch(`${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`);
+      if (!container) return;
+      if (!orders.length) {
+        container.innerHTML = '<div class="s-card s-empty">No orders yet.</div>';
+        return;
+      }
+
+      container.innerHTML = orders.map((order) => {
+        const itemsText = order.items
+          .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+          .join(', ');
+        const displayStatus = order.status === 'Preparing' ? 'Processing' : order.status;
+        const statusClass = order.status === 'Ready'
+          ? 's-chip-info'
+          : order.status === 'Delivered'
+            ? 's-chip-success'
+            : 's-chip-warn';
+
+        return `
+          <article class="s-card s-order-item">
+            <div class="s-order-head">
+              <h3>${order.orderID}</h3>
+              <span class="s-chip ${statusClass}">${displayStatus}</span>
+            </div>
+            <p>${itemsText}</p>
+            <p class="s-order-total">${formatCurrency(order.total)}</p>
+          </article>
+        `;
+      }).join('');
+    } catch (_) {
+      // keep polling silently for transient network errors
+    } finally {
+      isLoadingOrders = false;
+    }
+  }
+
+  loadStudentOrders();
+  ordersPollTimer = setInterval(loadStudentOrders, 5000);
+
+  window.addEventListener('beforeunload', () => {
+    if (ordersPollTimer) clearInterval(ordersPollTimer);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      loadStudentOrders();
+    }
+  });
+}
+
+function initStudentProfilePage() {
+  const session = requireStudentSession();
+  if (!session) return;
+
+  // Check if student is banned
+  if (session.banned) {
+    alert('Your account has been banned. Please contact support.');
+    clearStudentSession();
+    window.location.href = STUDENT_ROUTES.login;
+    return;
+  }
+
+  setText('profileName', session.name || '-');
+  setText('profileEmail', session.email || '-');
+  setText('profileCanID', session.canID || '-');
+  setText('profileClassSemester', session.classSemester || '-');
+  setText('profileMobile', session.mobile || '-');
+  setText('profileAdmissionNumber', session.admissionNumber || '-');
+  setText('profileAvatar', (session.name || 'S').trim().charAt(0).toUpperCase() || 'S');
+  updateStudentCartBadge();
+
+  document.getElementById('profileOrdersBtn')?.addEventListener('click', () => {
+    window.location.href = STUDENT_ROUTES.orders;
+  });
+}
+
+function initCommonActions() {
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      clearCanID();
+      clearAdminEmail();
+      window.location.href = 'admin-login.html';
+    });
+  }
+
+  const studentLogoutBtn = document.getElementById('studentLogoutBtn');
+  if (studentLogoutBtn) {
+    studentLogoutBtn.addEventListener('click', () => {
+      clearStudentSession();
+      clearStudentCart();
+      window.location.href = STUDENT_ROUTES.login;
+    });
+  }
+}
+
+function initStudentBanWatcher() {
+  const page = document.body?.dataset?.page || '';
+  if (!page.startsWith('student-')) return;
+
+  let banWatcherTimer = null;
+  let isCheckingBan = false;
+  let hasHandledBan = false;
+
+  async function checkBanStatus() {
+    if (isCheckingBan || hasHandledBan) return;
+    const session = getStudentSession();
+    if (!session?.studentID || !session?.canID) return;
+
+    isCheckingBan = true;
+    try {
+      const data = await safeFetch(
+        `${API_BASE}/student/session/${session.studentID}?canID=${encodeURIComponent(session.canID)}`
+      );
+
+      if (data?.banned) {
+        hasHandledBan = true;
+        clearStudentSession();
+        clearStudentCart();
+        alert('Your account has been banned. Please contact support.');
+        window.location.href = STUDENT_ROUTES.login;
+      }
+    } catch (_) {
+      // Ignore transient errors; next poll will retry.
+    } finally {
+      isCheckingBan = false;
+    }
+  }
+
+  checkBanStatus();
+  banWatcherTimer = setInterval(checkBanStatus, 5000);
+
+  window.addEventListener('beforeunload', () => {
+    if (banWatcherTimer) clearInterval(banWatcherTimer);
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      checkBanStatus();
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initAuthPageTransitions();
+  initCommonActions();
+  initStudentBanWatcher();
+  const page = document.body.dataset.page;
+
+  if (page === 'signup') initSignupPage();
+  if (page === 'login') initLoginPage();
+  if (page === 'dashboard') initDashboardPage();
+  if (page === 'menu') initMenuPage();
+  if (page === 'students') initStudentsPage();
+  if (page === 'orders') initOrdersPage();
+  if (page === 'analytics') initAnalyticsPage();
+  if (page === 'student-signup') initStudentSignupPage();
+  if (page === 'student-login') initStudentLoginPage();
+  if (page === 'student-portal') initStudentPortalPage();
+  if (page === 'student-home') initStudentHomePage();
+  if (page === 'student-cart') initStudentCartPage();
+  if (page === 'student-payment') initStudentPaymentPage();
+  if (page === 'student-order-success') initStudentOrderSuccessPage();
+  if (page === 'student-orders') initStudentOrdersPage();
+  if (page === 'student-profile') initStudentProfilePage();
+});

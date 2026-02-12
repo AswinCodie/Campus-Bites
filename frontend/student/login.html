@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Login</title>
+  <link rel="stylesheet" href="../css/student.css" />
+</head>
+<body class="s-auth-body" data-page="student-login">
+  <main class="s-auth-card">
+    <div class="s-brand">
+      <img class="s-brand-mark" src="/assets/logo.png" alt="CampusBites logo" />
+      <h1>CampusBites Student</h1>
+    </div>
+
+    <form id="studentLoginForm" class="s-form">
+      <label class="s-field">
+        <span>Email or Mobile Number</span>
+        <input type="text" id="studentIdentifier" placeholder="name@gmail.com or 9800000000" required />
+      </label>
+      <label class="s-field">
+        <span>Password</span>
+        <input type="password" id="password" placeholder="Enter password" minlength="8" required />
+      </label>
+      <button class="s-btn s-btn-primary s-btn-full" type="submit">Login</button>
+    </form>
+
+      <p class="s-auth-links">New student? <a href="signup.html">Create account</a></p>
+    <p class="s-auth-links">Admin? <a href="../admin-login.html">Admin Login</a></p>
+  </main>
+
+  <script src="../script.js"></script>
+</body>
+</html>
+

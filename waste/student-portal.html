@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Portal</title>
+  <link rel="stylesheet" href="css/student.css" />
+</head>
+<body class="student-body" data-page="student-portal">
+  <main class="student-shell">
+    <section class="student-header-card">
+      <div>
+        <p class="student-greeting">Hello, <span id="studentNameValue">Student</span></p>
+        <p class="student-subtitle">Welcome back to your canteen portal.</p>
+      </div>
+      <div class="student-header-actions">
+        <span class="college-badge">College ID: <strong id="studentCanIDValue">-</strong></span>
+        <button class="btn btn-outline" id="studentLogoutBtn">Logout</button>
+      </div>
+    </section>
+
+    <section class="section-block">
+      <div class="section-head">
+        <h2 class="section-title">Menu</h2>
+        <p class="section-copy">Choose your items and add them to cart.</p>
+      </div>
+      <div class="menu-grid" id="studentMenuBody"></div>
+    </section>
+
+    <section class="section-block">
+      <div class="section-head">
+        <h2 class="section-title">Cart / Order</h2>
+        <p class="section-copy">Review selected items before placing your order.</p>
+      </div>
+      <div class="cart-card">
+        <div id="cartItemsBody" class="cart-items"></div>
+        <div class="cart-total-row">
+          <span>Total Amount</span>
+          <strong id="cartTotalValue">&#8377;0.00</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block section-last">
+      <div class="section-head">
+        <h2 class="section-title">My Orders</h2>
+        <p class="section-copy">Track previous orders and current status.</p>
+      </div>
+      <div class="orders-grid" id="studentOrdersBody"></div>
+    </section>
+  </main>
+
+  <div class="sticky-order-bar">
+    <button class="btn btn-primary btn-place" id="placeOrderBtn">Place Order</button>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

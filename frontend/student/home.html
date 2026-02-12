@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Home</title>
+  <link rel="stylesheet" href="../css/student.css" />
+</head>
+<body class="s-page-body" data-page="student-home">
+  <header class="s-topbar">
+    <a class="s-logo" href="home.html">
+      <img class="s-brand-mark" src="/assets/logo.png" alt="CampusBites logo" />
+      <span>CampusBites</span>
+    </a>
+    <nav class="s-desktop-nav">
+      <a class="s-nav-link is-active" href="home.html">
+        <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/></svg></span>
+        <span class="s-nav-label">Home</span>
+      </a>
+      <a class="s-nav-link" href="cart.html">
+        <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 7H6.2"/></svg></span>
+        <span class="s-nav-label">Cart <span id="studentCartCount" class="s-badge-count">0</span></span>
+      </a>
+      <a class="s-nav-link" href="my-orders.html">
+        <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h10v18H7z"/><path d="M10 8h4"/><path d="M10 12h4"/><path d="M10 16h4"/></svg></span>
+        <span class="s-nav-label">My Orders</span>
+      </a>
+      <a class="s-nav-link" href="profile.html">
+        <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>
+        <span class="s-nav-label">Profile</span>
+      </a>
+    </nav>
+  </header>
+
+  <main class="s-container">
+    <section class="s-hero-card">
+      <div>
+        <h1>Hello, <span id="studentNameValue">Student</span></h1>
+      </div>
+      <div class="s-id-chip">College ID: <strong id="studentCanIDValue">-</strong></div>
+    </section>
+
+    <section class="s-home-controls">
+      <div class="s-search-wrap">
+        <input id="studentSearchInput" class="s-search" type="search" placeholder="Search food, drinks, snacks..." />
+      </div>
+
+      <div class="s-filter-row" id="studentFilterGroup">
+        <button class="s-btn s-btn-chip is-active" data-filter="all" type="button">
+          <span class="s-chip-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M12 4v16"/></svg>
+          </span>
+          <span>All</span>
+        </button>
+        <button class="s-btn s-btn-chip" data-filter="food" type="button">
+          <span class="s-chip-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M7 4v16"/><path d="M11 4v16"/><path d="M15 4v16"/><path d="M18 4c0 5-2 7-3 8v8"/></svg>
+          </span>
+          <span>Food</span>
+        </button>
+        <button class="s-btn s-btn-chip" data-filter="drink" type="button">
+          <span class="s-chip-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M6 4h12l-1 7a5 5 0 0 1-5 4h0a5 5 0 0 1-5-4L6 4z"/><path d="M12 15v5"/><path d="M9 20h6"/></svg>
+          </span>
+          <span>Drinks</span>
+        </button>
+        <button class="s-btn s-btn-chip" data-filter="snack" type="button">
+          <span class="s-chip-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M7 4h10l2 6-7 10-7-10 2-6z"/><path d="M7 10h10"/></svg>
+          </span>
+          <span>Snacks</span>
+        </button>
+      </div>
+    </section>
+
+    <section id="studentHomeFoodsGrid" class="s-food-grid"></section>
+  </main>
+  <nav class="s-mobile-nav">
+    <a class="s-nav-link is-active" href="home.html">
+      <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/></svg></span>
+      <span class="s-nav-label">Home</span>
+    </a>
+    <a class="s-nav-link" href="cart.html">
+      <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l2.2 10.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 7H6.2"/></svg></span>
+      <span class="s-nav-label">Cart</span>
+    </a>
+    <a class="s-nav-link" href="my-orders.html">
+      <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h10v18H7z"/><path d="M10 8h4"/><path d="M10 12h4"/><path d="M10 16h4"/></svg></span>
+      <span class="s-nav-label">My Orders</span>
+    </a>
+    <a class="s-nav-link" href="profile.html">
+      <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span>
+      <span class="s-nav-label">Profile</span>
+    </a>
+  </nav>
+
+  <script src="../script.js"></script>
+</body>
+</html>
+

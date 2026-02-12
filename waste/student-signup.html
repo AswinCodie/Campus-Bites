@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Signup</title>
+</head>
+<body data-page="student-signup">
+  <h1>Student Signup</h1>
+
+  <form id="studentSignupForm">
+    <label>canID: <input type="text" id="canID" placeholder="CAN-XXXXXXXX" required /></label><br /><br />
+    <label>Name: <input type="text" id="name" required /></label><br /><br />
+    <label>Email: <input type="email" id="email" pattern="[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" required /></label><br /><br />
+    <label>Password: <input type="password" id="password" minlength="8" required /></label><br /><br />
+    <button type="submit">Signup</button>
+  </form>
+
+  <p>Already have a student account? <a href="student-login.html">Login</a></p>
+  <p>Admin? <a href="admin-login.html">Admin Login</a></p>
+
+  <script src="script.js"></script>
+</body>
+</html>

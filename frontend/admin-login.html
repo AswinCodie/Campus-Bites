@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="css/auth.css" />
+</head>
+<body class="auth-body" data-page="login">
+  <main class="auth-card">
+    <div class="auth-brand">
+      <img class="auth-brand-mark" src="/assets/logo.png" alt="CampusBites logo" />
+      <h1 class="auth-brand-name">CampusBites</h1>
+    </div>
+
+    <nav class="auth-tabs" aria-label="Auth navigation">
+      <a href="admin-login.html" class="auth-tab active" aria-current="page">Login</a>
+      <a href="admin-signup.html" class="auth-tab" data-auth-switch>Signup</a>
+    </nav>
+
+    <form id="loginForm" class="auth-form">
+      <input class="auth-input" type="email" id="email" placeholder="Email" pattern="[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" required />
+      <input class="auth-input" type="password" id="password" placeholder="Password" minlength="8" required />
+      <button class="auth-submit" type="submit">Login</button>
+    </form>
+
+    <p class="auth-footer">Don't have an account? <a href="admin-signup.html" data-auth-switch>Create one</a></p>
+    <p class="auth-secondary">Student? <a href="student/login.html">Student Login</a></p>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
+
