@@ -719,7 +719,7 @@ async function initAnalyticsPage() {
           const barWidth = Math.max((total / maxRevenue) * 100, 2);
           return `
             <li class="analytics-row">
-              <span class="analytics-key">Day ${entry.day}</span>
+              <span class="analytics-key">Date ${entry.day}</span>
               <span class="analytics-bar-wrap"><span class="analytics-bar" style="width:${barWidth}%"></span></span>
               <span class="analytics-value">${formatCurrency(total)}</span>
             </li>
