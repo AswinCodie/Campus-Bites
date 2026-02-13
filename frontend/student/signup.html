@@ -8,10 +8,13 @@
 </head>
 <body class="s-auth-body" data-page="student-signup">
   <main class="s-auth-card">
+    <div class="centreIt">
     <div class="s-brand">
       <img class="s-brand-mark" src="/assets/logo.png" alt="CampusBites logo" />
-      <h1>CampusBites Student</h1>
+      <h1>Student Signup</h1>
     </div>
+    </div>
+
 
     <form id="studentSignupForm" class="s-form">
       <label class="s-field">
@@ -27,16 +30,16 @@
         <input type="text" id="classSemester" placeholder="BCA - Semester 4" required />
       </label>
       <label class="s-field">
+        <span>Admission Number</span>
+        <input type="text" id="admissionNumber" placeholder="8537" required />
+      </label>
+      <label class="s-field">
         <span>Mobile Number</span>
         <input type="tel" id="mobile" placeholder="9800000000" pattern="[0-9]{10}" required />
       </label>
       <label class="s-field">
         <span>Email</span>
         <input type="email" id="email" placeholder="youname@gmail.com" pattern="[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" required />
-      </label>
-      <label class="s-field">
-        <span>Admission Number</span>
-        <input type="text" id="admissionNumber" placeholder="8537" required />
       </label>
       <label class="s-field">
         <span>Password</span>

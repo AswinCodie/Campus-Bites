@@ -684,7 +684,7 @@ app.patch('/order/:id/status', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, 'admin-login.html'));
+  res.sendFile(path.join(FRONTEND_DIR, 'student', 'login.html'));
 });
 
 connectDB().then(() => {

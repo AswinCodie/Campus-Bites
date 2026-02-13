@@ -895,3 +895,10 @@ body {
     justify-content: flex-end;
   }
 }
+
+.centreIt{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  
+}
