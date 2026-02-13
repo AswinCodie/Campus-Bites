@@ -717,6 +717,65 @@ body {
   font-weight: 700;
 }
 
+.s-order-item {
+  cursor: pointer;
+}
+
+.s-qr-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(2, 6, 23, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.s-qr-modal-card {
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid var(--s-border);
+  box-shadow: var(--s-shadow);
+  padding: 18px;
+  position: relative;
+  text-align: center;
+}
+
+.s-qr-modal-card h2 {
+  margin: 0 0 8px;
+}
+
+.s-qr-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  border: none;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  color: #334155;
+  cursor: pointer;
+}
+
+.s-qr-canvas {
+  margin: 14px auto 6px;
+  width: 260px;
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.s-qr-fallback {
+  margin-top: 8px;
+  color: #475569;
+}
+
 .s-profile-card {
   margin-top: 18px;
   padding: 20px;

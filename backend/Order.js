@@ -11,6 +11,18 @@ const orderSchema = new mongoose.Schema({
   studentID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: { type: [orderItemSchema], required: true },
   total: { type: Number, required: true, min: 0 },
+  pickupToken: {
+    type: String,
+    minlength: 4,
+    maxlength: 4,
+    match: /^\d{4}$/,
+    unique: true,
+    sparse: true
+  },
+  qrToken: {
+    type: String,
+    default: null
+  },
   status: {
     type: String,
     enum: ['Preparing', 'Ready', 'Delivered'],

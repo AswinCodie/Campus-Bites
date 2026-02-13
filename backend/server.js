@@ -10,6 +10,11 @@ const Canteen = require('./Canteen');
 const User = require('./User');
 const Food = require('./Food');
 const Order = require('./Order');
+const {
+  generateUniquePickupToken,
+  signOrderQrToken,
+  verifyOrderQrToken
+} = require('./utils/orderTokens');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -578,6 +583,12 @@ app.post('/order/place', async (req, res) => {
     }
 
     const orderID = await generateUniqueOrderID();
+    const pickupToken = await generateUniquePickupToken();
+    const qrToken = signOrderQrToken({
+      orderId: orderID,
+      canID,
+      pickupToken
+    });
 
     const order = await Order.create({
       orderID,
@@ -585,6 +596,8 @@ app.post('/order/place', async (req, res) => {
       studentID,
       items: normalizedItems,
       total,
+      pickupToken,
+      qrToken,
       status: 'Preparing'
     });
 
@@ -680,6 +693,92 @@ app.patch('/order/:id/status', async (req, res) => {
     return res.json({ message: 'Order status updated', order: updated });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to update order status', error: error.message });
+  }
+});
+
+app.patch('/api/orders/:id/mark-ready', async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    if (!order.qrToken || !order.pickupToken) {
+      const pickupToken = await generateUniquePickupToken();
+      order.pickupToken = pickupToken;
+      order.qrToken = signOrderQrToken({
+        orderId: order.orderID,
+        canID: order.canID,
+        pickupToken
+      });
+    }
+
+    order.status = 'Ready';
+    await order.save();
+
+    return res.json({ message: 'Order marked as ready', order });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to mark order as ready', error: error.message });
+  }
+});
+
+app.post('/api/orders/scan', async (req, res) => {
+  try {
+    const scannedToken = String(req.body?.token || '').trim();
+    if (!scannedToken) {
+      return res.status(400).json({ message: 'Scanned token is required' });
+    }
+
+    let payload;
+    try {
+      payload = verifyOrderQrToken(scannedToken);
+    } catch (error) {
+      const isExpired = error.name === 'TokenExpiredError';
+      return res.status(401).json({ message: isExpired ? 'QR token expired' : 'Invalid QR token' });
+    }
+
+    if (payload?.type !== 'order_pickup' || !payload?.orderId || !payload?.canID) {
+      return res.status(401).json({ message: 'Invalid QR token payload' });
+    }
+
+    const updated = await Order.findOneAndUpdate(
+      {
+        orderID: payload.orderId,
+        canID: payload.canID,
+        status: 'Ready',
+        qrToken: scannedToken
+      },
+      { status: 'Delivered' },
+      { new: true }
+    ).populate('studentID', 'name email');
+
+    if (!updated) {
+      const existing = await Order.findOne({
+        orderID: payload.orderId,
+        canID: payload.canID
+      }).populate('studentID', 'name email');
+
+      if (!existing) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+
+      if (existing.status === 'Delivered') {
+        return res.status(409).json({ message: 'QR already used. Order already delivered' });
+      }
+
+      if (existing.status !== 'Ready') {
+        return res.status(409).json({ message: 'Order is not ready for pickup' });
+      }
+
+      return res.status(409).json({ message: 'Invalid or stale QR token for this order' });
+    }
+
+    return res.json({
+      message: 'Pickup confirmed. Order marked as delivered',
+      order: updated
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to process QR scan', error: error.message });
   }
 });
 

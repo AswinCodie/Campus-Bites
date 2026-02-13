@@ -40,6 +40,17 @@
 
     <section id="studentOrdersList" class="s-stack"></section>
   </main>
+
+  <div id="orderQrModal" class="s-qr-modal" style="display: none;">
+    <div class="s-qr-modal-card">
+      <button id="orderQrModalClose" class="s-qr-close" type="button" aria-label="Close QR modal">&times;</button>
+      <h2>Pickup QR</h2>
+      <p id="orderQrMeta" class="s-muted"></p>
+      <div id="orderQrCanvas" class="s-qr-canvas"></div>
+      <p id="orderQrFallback" class="s-qr-fallback" style="display: none;"></p>
+    </div>
+  </div>
+
   <nav class="s-mobile-nav">
     <a class="s-nav-link" href="home.html">
       <span class="s-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/></svg></span>
@@ -59,6 +70,7 @@
     </a>
   </nav>
 
+  <script src="../vendor/qrcode.min.js"></script>
   <script src="../script.js"></script>
 </body>
 </html>

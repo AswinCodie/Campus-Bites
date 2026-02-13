@@ -238,6 +238,54 @@ async function safeFetch(url, options = {}) {
   return data;
 }
 
+function closeOrderQrModal() {
+  const modal = document.getElementById('orderQrModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function openOrderQrModal(order) {
+  const modal = document.getElementById('orderQrModal');
+  const meta = document.getElementById('orderQrMeta');
+  const qrCanvas = document.getElementById('orderQrCanvas');
+  const fallback = document.getElementById('orderQrFallback');
+  if (!modal || !meta || !qrCanvas || !fallback) return;
+
+  meta.textContent = `Order: ${order.orderID} | Status: ${order.status}`;
+  fallback.style.display = 'none';
+  fallback.textContent = '';
+  qrCanvas.innerHTML = '';
+
+  if (!order.qrToken) {
+    fallback.style.display = 'block';
+    fallback.textContent = 'QR token not available for this order yet.';
+  } else if (window.QRCode?.toCanvas) {
+    const canvas = document.createElement('canvas');
+    qrCanvas.appendChild(canvas);
+    try {
+      await window.QRCode.toCanvas(canvas, order.qrToken, { width: 240, margin: 1 });
+    } catch (_) {
+      fallback.style.display = 'block';
+      fallback.textContent = 'Unable to generate QR. Please try again.';
+    }
+  } else if (typeof window.QRCode === 'function') {
+    try {
+      new window.QRCode(qrCanvas, {
+        text: order.qrToken,
+        width: 240,
+        height: 240
+      });
+    } catch (_) {
+      fallback.style.display = 'block';
+      fallback.textContent = 'Unable to generate QR. Please try again.';
+    }
+  } else {
+    fallback.style.display = 'block';
+    fallback.textContent = 'QR library not loaded.';
+  }
+
+  modal.style.display = 'flex';
+}
+
 async function initSignupPage() {
   const form = document.getElementById('signupForm');
   form.addEventListener('submit', async (e) => {
@@ -1377,22 +1425,26 @@ async function initStudentOrdersPage() {
     return;
   }
   const container = document.getElementById('studentOrdersList');
+  const modal = document.getElementById('orderQrModal');
+  const closeBtn = document.getElementById('orderQrModalClose');
   updateStudentCartBadge();
   let isLoadingOrders = false;
   let ordersPollTimer = null;
+  let currentOrders = [];
 
   async function loadStudentOrders() {
     if (isLoadingOrders) return;
     isLoadingOrders = true;
     try {
       const orders = await safeFetch(`${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`);
+      currentOrders = Array.isArray(orders) ? orders : [];
       if (!container) return;
-      if (!orders.length) {
+      if (!currentOrders.length) {
         container.innerHTML = '<div class="s-card s-empty">No orders yet.</div>';
         return;
       }
 
-      container.innerHTML = orders.map((order) => {
+      container.innerHTML = currentOrders.map((order) => {
         const itemsText = order.items
           .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
           .join(', ');
@@ -1404,7 +1456,7 @@ async function initStudentOrdersPage() {
             : 's-chip-warn';
 
         return `
-          <article class="s-card s-order-item">
+          <article class="s-card s-order-item" data-order-id="${order._id}">
             <div class="s-order-head">
               <h3>${order.orderID}</h3>
               <span class="s-chip ${statusClass}">${displayStatus}</span>
@@ -1423,6 +1475,19 @@ async function initStudentOrdersPage() {
 
   loadStudentOrders();
   ordersPollTimer = setInterval(loadStudentOrders, 5000);
+
+  container?.addEventListener('click', async (e) => {
+    const card = e.target.closest('[data-order-id]');
+    if (!card) return;
+    const order = currentOrders.find((entry) => entry._id === card.dataset.orderId);
+    if (!order) return;
+    await openOrderQrModal(order);
+  });
+
+  closeBtn?.addEventListener('click', closeOrderQrModal);
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeOrderQrModal();
+  });
 
   window.addEventListener('beforeunload', () => {
     if (ordersPollTimer) clearInterval(ordersPollTimer);
@@ -1458,6 +1523,111 @@ function initStudentProfilePage() {
 
   document.getElementById('profileOrdersBtn')?.addEventListener('click', () => {
     window.location.href = STUDENT_ROUTES.orders;
+  });
+}
+
+async function initAdminScanPage() {
+  const canID = requireCanID();
+  if (!canID) return;
+  applyAdminHeaderIdentity(canID);
+
+  const statusEl = document.getElementById('scanStatus');
+  const resultEl = document.getElementById('scanResult');
+  const readerId = 'reader';
+  let scanLock = false;
+  let scanner = null;
+  const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+
+  function setStatus(message) {
+    if (statusEl) statusEl.textContent = message;
+  }
+
+  function setResult(message, isError = false) {
+    if (!resultEl) return;
+    resultEl.textContent = message;
+    resultEl.classList.toggle('scan-error', isError);
+    resultEl.classList.toggle('scan-success', !isError);
+  }
+
+  function getScannerErrorMessage(error) {
+    if (!error) return 'Unknown error';
+    if (typeof error === 'string') return error;
+    const name = typeof error.name === 'string' ? error.name : '';
+    const message = typeof error.message === 'string' ? error.message : '';
+    if (name && message) return `${name}: ${message}`;
+    if (message) return message;
+    if (name) return name;
+    try {
+      return JSON.stringify(error);
+    } catch (_) {
+      return 'Unknown error';
+    }
+  }
+
+  async function processToken(tokenText) {
+    if (scanLock) return;
+    scanLock = true;
+    setStatus('Processing scan...');
+    try {
+      const data = await safeFetch(`${API_BASE}/api/orders/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tokenText })
+      });
+      const scannedOrderId = data?.order?.orderID || 'Unknown';
+      const scannedStatus = data?.order?.status || 'Unknown';
+      setResult(`Success: ${scannedOrderId} -> ${scannedStatus}`, false);
+      setStatus('Ready to scan next QR');
+    } catch (error) {
+      setResult(error.message || 'Scan failed', true);
+      setStatus('Scan failed. Try another QR');
+    } finally {
+      setTimeout(() => {
+        scanLock = false;
+      }, 1200);
+    }
+  }
+
+  try {
+    if (!window.isSecureContext && !isLocalhost) {
+      setStatus('Unable to start scanner: camera access on mobile requires HTTPS (or localhost).');
+      setResult('Open this admin page using HTTPS or localhost, then allow camera permission.', true);
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('Unable to start scanner: this browser does not support camera access.');
+      setResult('Use a modern Chrome/Safari browser on mobile.', true);
+      return;
+    }
+
+    if (!window.Html5Qrcode) {
+      throw new Error('Scanner library not loaded');
+    }
+
+    scanner = new window.Html5Qrcode(readerId);
+    await scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
+      async (decodedText) => {
+        await processToken(decodedText);
+      }
+    );
+    setStatus('Scanner started. Point camera at order QR');
+  } catch (error) {
+    const scannerError = getScannerErrorMessage(error);
+    setStatus(`Unable to start scanner: ${scannerError}`);
+    setResult('No scan yet.', true);
+  }
+
+  window.addEventListener('beforeunload', async () => {
+    if (scanner && scanner.isScanning) {
+      try {
+        await scanner.stop();
+      } catch (_) {
+        // ignore scanner stop errors while unloading
+      }
+    }
   });
 }
 
@@ -1541,6 +1711,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (page === 'students') initStudentsPage();
   if (page === 'orders') initOrdersPage();
   if (page === 'analytics') initAnalyticsPage();
+  if (page === 'admin-scan') initAdminScanPage();
   if (page === 'student-signup') initStudentSignupPage();
   if (page === 'student-login') initStudentLoginPage();
   if (page === 'student-portal') initStudentPortalPage();
