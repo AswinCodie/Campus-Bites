@@ -97,6 +97,35 @@ async function generateUniqueOrderID() {
   return orderID;
 }
 
+function formatOrderDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function createDailyToken() {
+  return String(1000 + Math.floor(Math.random() * 9000));
+}
+
+async function generateUniqueDailyToken({ canID, orderDate }, maxAttempts = 120) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const dailyToken = createDailyToken();
+    const exists = await Order.exists({ canID, orderDate, dailyToken });
+    if (!exists) return dailyToken;
+  }
+  throw new Error('Unable to generate a unique daily token');
+}
+
+function buildOrderQrPayload({ orderID, dailyToken, canID, orderDate }) {
+  return JSON.stringify({
+    orderId: String(orderID),
+    token: String(dailyToken),
+    canteenId: String(canID),
+    date: String(orderDate)
+  });
+}
+
 function normalizeFoodCategory(value) {
   const category = String(value || 'food').toLowerCase();
   if (category === 'drink' || category === 'drinks') return 'drink';
@@ -318,6 +347,8 @@ app.get('/api/orders', requireStaffAuth, async (req, res) => {
     const staffOrders = sortOrdersByStatusPriority(orders).map((order) => ({
       _id: order._id,
       orderID: order.orderID,
+      orderDate: order.orderDate,
+      dailyToken: order.dailyToken,
       status: order.status,
       total: order.total,
       createdAt: order.createdAt,
@@ -366,6 +397,8 @@ app.put('/api/orders/:orderId/status', requireStaffAuth, async (req, res) => {
       order: {
         _id: updated._id,
         orderID: updated.orderID,
+        orderDate: updated.orderDate,
+        dailyToken: updated.dailyToken,
         status: updated.status,
         total: updated.total,
         createdAt: updated.createdAt,
@@ -820,70 +853,116 @@ app.patch('/student/:id/ban', async (req, res) => {
   }
 });
 
+async function buildValidatedOrderInput({ canID, studentID, items }) {
+  if (!canID || !studentID || !Array.isArray(items) || items.length === 0) {
+    const error = new Error('canID, studentID, and items are required');
+    error.status = 400;
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(studentID)) {
+    const error = new Error('Invalid studentID');
+    error.status = 400;
+    throw error;
+  }
+
+  const student = await User.findOne({ _id: studentID, canID });
+  if (!student) {
+    const error = new Error('Student not found for this canID');
+    error.status = 404;
+    throw error;
+  }
+
+  const normalizedItems = [];
+  let total = 0;
+
+  for (const item of items) {
+    const { foodID, quantity } = item;
+    if (!mongoose.Types.ObjectId.isValid(foodID) || !quantity || Number(quantity) <= 0) {
+      const error = new Error('Each item must have valid foodID and quantity > 0');
+      error.status = 400;
+      throw error;
+    }
+
+    const food = await Food.findOne({ _id: foodID, canID });
+    if (!food) {
+      const error = new Error(`Food not found for id ${foodID}`);
+      error.status = 404;
+      throw error;
+    }
+
+    if (!food.inStock) {
+      const error = new Error(`${food.name} is out of stock`);
+      error.status = 400;
+      throw error;
+    }
+
+    const qty = Number(quantity);
+    total += food.price * qty;
+    normalizedItems.push({ foodID: food._id, quantity: qty });
+  }
+
+  return { normalizedItems, total };
+}
+
+async function createOrderWithDailyToken({ canID, studentID, items }) {
+  const { normalizedItems, total } = await buildValidatedOrderInput({ canID, studentID, items });
+  const orderID = await generateUniqueOrderID();
+  const orderDate = formatOrderDateKey(new Date());
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const dailyToken = await generateUniqueDailyToken({ canID, orderDate });
+    const qrToken = buildOrderQrPayload({ orderID, dailyToken, canID, orderDate });
+    const pickupToken = await generateUniquePickupToken();
+
+    try {
+      const order = await Order.create({
+        orderID,
+        canID,
+        orderDate,
+        dailyToken,
+        studentID,
+        items: normalizedItems,
+        total,
+        pickupToken,
+        qrToken,
+        status: 'Preparing'
+      });
+      return order;
+    } catch (error) {
+      const duplicate = error?.code === 11000 && (
+        error?.keyPattern?.dailyToken ||
+        error?.keyPattern?.orderID ||
+        error?.keyPattern?.pickupToken
+      );
+      if (!duplicate || attempt === 11) throw error;
+    }
+  }
+
+  throw new Error('Unable to create order');
+}
+
 app.post('/order/place', async (req, res) => {
   try {
-    const { canID, studentID, items } = req.body;
-
-    if (!canID || !studentID || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: 'canID, studentID, and items are required' });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(studentID)) {
-      return res.status(400).json({ message: 'Invalid studentID' });
-    }
-
-    const student = await User.findOne({ _id: studentID, canID });
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found for this canID' });
-    }
-
-    const normalizedItems = [];
-    let total = 0;
-
-    for (const item of items) {
-      const { foodID, quantity } = item;
-
-      if (!mongoose.Types.ObjectId.isValid(foodID) || !quantity || Number(quantity) <= 0) {
-        return res.status(400).json({ message: 'Each item must have valid foodID and quantity > 0' });
-      }
-
-      const food = await Food.findOne({ _id: foodID, canID });
-      if (!food) {
-        return res.status(404).json({ message: `Food not found for id ${foodID}` });
-      }
-
-      if (!food.inStock) {
-        return res.status(400).json({ message: `${food.name} is out of stock` });
-      }
-
-      const qty = Number(quantity);
-      total += food.price * qty;
-      normalizedItems.push({ foodID: food._id, quantity: qty });
-    }
-
-    const orderID = await generateUniqueOrderID();
-    const pickupToken = await generateUniquePickupToken();
-    const qrToken = signOrderQrToken({
-      orderId: orderID,
-      canID,
-      pickupToken
-    });
-
-    const order = await Order.create({
-      orderID,
-      canID,
-      studentID,
-      items: normalizedItems,
-      total,
-      pickupToken,
-      qrToken,
-      status: 'Preparing'
-    });
-
+    const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const { studentID, items } = req.body;
+    const order = await createOrderWithDailyToken({ canID, studentID, items });
     emitOrderEvent('newOrder', order);
     return res.status(201).json({ message: 'Order placed', order });
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to place order', error: error.message });
+    return res.status(error.status || 500).json({ message: 'Failed to place order', error: error.message });
+  }
+});
+
+app.post('/api/orders/create', async (req, res) => {
+  try {
+    const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const { studentID, items } = req.body;
+    const order = await createOrderWithDailyToken({ canID, studentID, items });
+    emitOrderEvent('newOrder', order);
+    return res.status(201).json({ message: 'Order created', order });
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: 'Failed to create order', error: error.message });
   }
 });
 
@@ -1021,13 +1100,24 @@ app.patch('/api/orders/:id/mark-ready', async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    if (!order.qrToken || !order.pickupToken) {
-      const pickupToken = await generateUniquePickupToken();
-      order.pickupToken = pickupToken;
-      order.qrToken = signOrderQrToken({
-        orderId: order.orderID,
+    if (!order.dailyToken) {
+      order.dailyToken = await generateUniqueDailyToken({
         canID: order.canID,
-        pickupToken
+        orderDate: order.orderDate || formatOrderDateKey(order.createdAt || new Date())
+      });
+    }
+    if (!order.orderDate) {
+      order.orderDate = formatOrderDateKey(order.createdAt || new Date());
+    }
+    if (!order.pickupToken) {
+      order.pickupToken = await generateUniquePickupToken();
+    }
+    if (!order.qrToken) {
+      order.qrToken = buildOrderQrPayload({
+        orderID: order.orderID,
+        dailyToken: order.dailyToken,
+        canID: order.canID,
+        orderDate: order.orderDate
       });
     }
 
@@ -1041,11 +1131,83 @@ app.patch('/api/orders/:id/mark-ready', async (req, res) => {
   }
 });
 
+async function verifyOrderAndMarkDelivered({ orderId, token, canteenId, date }) {
+  const normalizedOrderId = String(orderId || '').trim();
+  const normalizedToken = String(token || '').trim();
+  const normalizedCanteenId = String(canteenId || '').trim();
+  const normalizedDate = String(date || '').trim();
+
+  if (!normalizedOrderId || !normalizedToken || !normalizedCanteenId || !normalizedDate) {
+    const error = new Error('orderId, token, canteenId and date are required');
+    error.status = 400;
+    throw error;
+  }
+
+  const existing = await Order.findOne({
+    orderID: normalizedOrderId,
+    canID: normalizedCanteenId,
+    orderDate: normalizedDate,
+    dailyToken: normalizedToken
+  })
+    .populate('studentID', 'name email')
+    .populate('items.foodID', 'name');
+
+  if (!existing) {
+    return { status: 404, body: { message: 'Order not found for today' } };
+  }
+
+  if (existing.status === 'Delivered') {
+    return { status: 409, body: { message: 'Order already delivered', order: existing } };
+  }
+
+  existing.status = 'Delivered';
+  await existing.save();
+  emitOrderEvent('orderUpdated', existing);
+
+  return {
+    status: 200,
+    body: {
+      message: 'Order delivered',
+      order: existing
+    }
+  };
+}
+
+app.get('/api/orders/verify', async (req, res) => {
+  try {
+    const result = await verifyOrderAndMarkDelivered({
+      orderId: req.query?.orderId,
+      token: req.query?.token,
+      canteenId: req.query?.canteenId,
+      date: req.query?.date
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: 'Failed to verify order', error: error.message });
+  }
+});
+
 app.post('/api/orders/scan', async (req, res) => {
   try {
     const scannedToken = String(req.body?.token || '').trim();
     if (!scannedToken) {
       return res.status(400).json({ message: 'Scanned token is required' });
+    }
+
+    if (scannedToken.startsWith('{')) {
+      let parsed;
+      try {
+        parsed = JSON.parse(scannedToken);
+      } catch (_) {
+        return res.status(400).json({ message: 'Invalid QR JSON payload' });
+      }
+      const result = await verifyOrderAndMarkDelivered({
+        orderId: parsed.orderId,
+        token: parsed.token,
+        canteenId: parsed.canteenId,
+        date: parsed.date
+      });
+      return res.status(result.status).json(result.body);
     }
 
     let payload;

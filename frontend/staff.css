@@ -103,6 +103,50 @@ body {
 .staff-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+  position: relative;
+}
+
+.staff-menu-toggle {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+}
+
+.staff-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 140px;
+  background: #fff;
+  border: 1px solid var(--staff-border);
+  border-radius: 10px;
+  box-shadow: var(--staff-shadow);
+  display: none;
+  min-width: 140px;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.staff-menu-panel.is-open {
+  display: block;
+}
+
+.staff-menu-link {
+  display: block;
+  padding: 10px 12px;
+  color: var(--staff-text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.staff-menu-link:hover,
+.staff-menu-link.is-active {
+  background: #eaf6ff;
+}
+
+.staff-view {
+  display: grid;
+  gap: 12px;
 }
 
 .staff-grid {

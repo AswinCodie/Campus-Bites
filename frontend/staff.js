@@ -133,22 +133,30 @@ async function initStaffDashboardPage() {
   const preparingEl = document.getElementById('staffOrdersPreparing');
   const readyEl = document.getElementById('staffOrdersReady');
   const deliveredEl = document.getElementById('staffOrdersDelivered');
+  const scanResultEl = document.getElementById('staffScanResult');
+  const ordersViewEl = document.getElementById('staffOrdersView');
+  const scanViewEl = document.getElementById('staffScanView');
+  const menuToggleEl = document.getElementById('staffMenuToggle');
+  const menuPanelEl = document.getElementById('staffMenuPanel');
+  const menuLinks = Array.from(document.querySelectorAll('[data-staff-route]'));
   const identityEl = document.getElementById('staffIdentity');
   const liveStatusEl = document.getElementById('staffLiveStatus');
   const scanStatusEl = document.getElementById('staffScanStatus');
   const refreshBtn = document.getElementById('staffRefreshBtn');
   const logoutBtn = document.getElementById('staffLogoutBtn');
-  if (!ordersBoardEl || !preparingEl || !readyEl || !deliveredEl || !identityEl) return;
+  if (!ordersBoardEl || !preparingEl || !readyEl || !deliveredEl || !identityEl || !scanResultEl || !ordersViewEl || !scanViewEl) return;
 
   let staffSession = null;
   let ordersCache = [];
   let pollTimer = null;
   let scanner = null;
   let scanLock = false;
+  let scannerStarting = false;
+  let activeRoute = 'orders';
 
   function renderOrderCard(order) {
     const itemsText = (order.items || [])
-      .map((item) => `${item.name || 'Unknown'} x ${item.quantity}`)
+      .map((item) => `${item.name || item.foodID?.name || 'Unknown'} x ${item.quantity}`)
       .join(', ');
 
     const statusClass = order.status === 'Ready'
@@ -193,6 +201,47 @@ async function initStaffDashboardPage() {
     renderSection(deliveredEl, orders.filter((order) => order.status === 'Delivered'), 'No delivered orders today.');
   }
 
+  function renderScanResult(order, message = '') {
+    if (!order) {
+      scanResultEl.innerHTML = `<article class="order-card"><p class="staff-muted">${escapeHtml(message || 'No scan yet.')}</p></article>`;
+      return;
+    }
+
+    const itemsText = (order.items || [])
+      .map((item) => `${item.name || item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+      .join(', ');
+
+    scanResultEl.innerHTML = `
+      <article class="order-card">
+        <div class="order-head">
+          <p class="order-id">${escapeHtml(order.orderID || '-')}</p>
+          <span class="order-chip chip-delivered">Delivered</span>
+        </div>
+        <p class="order-meta">Token: ${escapeHtml(order.dailyToken || '-')} | Date: ${escapeHtml(order.orderDate || '-')}</p>
+        <p class="order-items">${escapeHtml(itemsText)}</p>
+        <p class="order-total">Total: ${formatCurrency(order.total)}</p>
+      </article>
+    `;
+    if (message) scanStatusEl.textContent = message;
+  }
+
+  function getCurrentRoute() {
+    const hash = window.location.hash || '#/orders';
+    return hash === '#/scan' ? 'scan' : 'orders';
+  }
+
+  async function stopScanner() {
+    if (scanner && scanner.isScanning) {
+      try {
+        await scanner.stop();
+      } catch (_) {
+        // ignore scanner stop errors
+      }
+    }
+    scanner = null;
+    scannerStarting = false;
+  }
+
   function pickPreferredBackCamera(cameras) {
     if (!Array.isArray(cameras) || cameras.length === 0) return null;
 
@@ -213,73 +262,86 @@ async function initStaffDashboardPage() {
     return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
   }
 
-  function markScannedOrder(orderIdText) {
-    const rawOrderId = String(orderIdText || '').trim();
-    if (!rawOrderId) {
-      scanStatusEl.textContent = 'Scan failed: empty Order ID.';
-      return;
+  async function verifyScannedPayload(payload) {
+    const orderId = String(payload?.orderId || '').trim();
+    const token = String(payload?.token || '').trim();
+    const canteenId = String(payload?.canteenId || '').trim();
+    const date = String(payload?.date || '').trim();
+
+    if (!orderId || !token || !canteenId || !date) {
+      throw new Error('QR data is invalid.');
     }
 
-    const matchedOrder = ordersCache.find((order) => String(order.orderID || '').trim() === rawOrderId);
-    if (!matchedOrder?._id) {
-      scanStatusEl.textContent = `Order not found for today: ${rawOrderId}`;
-      return;
-    }
-
-    const targetCard = ordersBoardEl.querySelector(`[data-order-id="${matchedOrder._id}"]`);
-    if (!targetCard) {
-      scanStatusEl.textContent = `Order found but not visible: ${rawOrderId}`;
-      return;
-    }
-
-    ordersBoardEl.querySelectorAll('.order-card.is-highlighted').forEach((el) => el.classList.remove('is-highlighted'));
-    targetCard.classList.add('is-highlighted');
-    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    scanStatusEl.textContent = `Matched order: ${rawOrderId}`;
-  }
-
-  async function startScannerWithCandidates(candidates) {
-    for (const candidate of candidates) {
-      try {
-        scanner = new window.Html5Qrcode('staffQrReader');
-        await scanner.start(
-          candidate,
-          { fps: 10, qrbox: { width: 200, height: 200 } },
-          async (decodedText) => {
-            if (scanLock) return;
-            scanLock = true;
-            markScannedOrder(decodedText);
-            setTimeout(() => {
-              scanLock = false;
-            }, 1200);
-          }
-        );
-        return true;
-      } catch (_) {
-        if (scanner && scanner.isScanning) {
-          try {
-            await scanner.stop();
-          } catch (_) {
-            // ignore scanner stop errors
-          }
-        }
-        scanner = null;
+    const response = await fetch(
+      `${STAFF_API_BASE}/api/orders/verify?orderId=${encodeURIComponent(orderId)}&token=${encodeURIComponent(token)}&canteenId=${encodeURIComponent(canteenId)}&date=${encodeURIComponent(date)}`,
+      {
+        method: 'GET',
+        credentials: 'include'
       }
-    }
-    return false;
+    );
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, data };
   }
 
-  async function initScanner() {
+  async function handleScan(decodedText) {
+    if (scanLock) return;
+    scanLock = true;
+    try {
+      let payload;
+      try {
+        payload = JSON.parse(decodedText);
+      } catch (_) {
+        scanStatusEl.textContent = 'Invalid QR format.';
+        renderScanResult(null, 'Invalid QR format.');
+        return;
+      }
+
+      const result = await verifyScannedPayload(payload);
+      if (result.ok) {
+        renderScanResult(result.data.order, 'Order marked as Delivered.');
+        await loadOrders();
+        return;
+      }
+
+      if (result.status === 409 && result.data?.message === 'Order already delivered') {
+        renderScanResult(result.data.order || null, 'Order already delivered');
+        await loadOrders();
+        return;
+      }
+
+      if (result.status === 404) {
+        renderScanResult(null, 'Order not found for today');
+        return;
+      }
+
+      renderScanResult(null, result.data?.message || 'Verification failed');
+    } catch (error) {
+      renderScanResult(null, error.message || 'Scan failed');
+    } finally {
+      setTimeout(() => {
+        scanLock = false;
+      }, 1000);
+    }
+  }
+
+  async function startScanner() {
+    if (scannerStarting || scanner?.isScanning) return;
+    if (activeRoute !== 'scan') return;
+    scannerStarting = true;
+
     if (!window.isSecureContext && !isLocalHost()) {
       scanStatusEl.textContent = 'Scanner error: camera access on mobile needs HTTPS (or localhost).';
+      scannerStarting = false;
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
       scanStatusEl.textContent = 'Scanner error: this browser does not support camera access.';
+      scannerStarting = false;
       return;
     }
     if (!window.Html5Qrcode) {
       scanStatusEl.textContent = 'Scanner unavailable: library not loaded.';
+      scannerStarting = false;
       return;
     }
 
@@ -291,20 +353,58 @@ async function initStaffDashboardPage() {
           const preferred = pickPreferredBackCamera(cameras);
           if (preferred?.id) candidates.push(preferred.id);
         } catch (_) {
-          // keep fallback candidates
+          // keep fallbacks
         }
       }
       candidates.push({ facingMode: { ideal: 'environment' } });
       candidates.push({ facingMode: 'environment' });
 
-      const started = await startScannerWithCandidates(candidates);
-      if (!started) {
-        scanStatusEl.textContent = 'Scanner error: unable to start camera. Allow camera permission and close any app/tab using camera.';
-        return;
+      for (const candidate of candidates) {
+        try {
+          scanner = new window.Html5Qrcode('staffQrReader');
+          await scanner.start(
+            candidate,
+            { fps: 10, qrbox: { width: 220, height: 220 } },
+            async (decodedText) => {
+              await handleScan(decodedText);
+            }
+          );
+          scanStatusEl.textContent = 'Scanner ready. Scan pickup QR.';
+          scannerStarting = false;
+          return;
+        } catch (_) {
+          if (scanner && scanner.isScanning) {
+            try {
+              await scanner.stop();
+            } catch (_) {
+              // ignore
+            }
+          }
+          scanner = null;
+        }
       }
-      scanStatusEl.textContent = 'Scanner ready. Scan Order ID QR.';
+
+      scanStatusEl.textContent = 'Scanner error: unable to start camera.';
     } catch (error) {
       scanStatusEl.textContent = `Scanner error: ${error?.message || 'Unable to start camera.'}`;
+    } finally {
+      scannerStarting = false;
+    }
+  }
+
+  async function setRoute(route) {
+    activeRoute = route === 'scan' ? 'scan' : 'orders';
+    ordersViewEl.style.display = activeRoute === 'orders' ? 'grid' : 'none';
+    scanViewEl.style.display = activeRoute === 'scan' ? 'grid' : 'none';
+    menuLinks.forEach((link) => {
+      link.classList.toggle('is-active', link.dataset.staffRoute === activeRoute);
+    });
+    menuPanelEl?.classList.remove('is-open');
+
+    if (activeRoute === 'scan') {
+      await startScanner();
+    } else {
+      await stopScanner();
     }
   }
 
@@ -357,9 +457,9 @@ async function initStaffDashboardPage() {
     return;
   }
 
+  renderScanResult(null, 'No scan yet.');
   await loadOrders();
   setupSocket();
-  await initScanner();
 
   pollTimer = setInterval(() => {
     loadOrders().catch(() => {});
@@ -382,6 +482,21 @@ async function initStaffDashboardPage() {
     }
   });
 
+  menuToggleEl?.addEventListener('click', () => {
+    menuPanelEl?.classList.toggle('is-open');
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!menuPanelEl || !menuToggleEl) return;
+    if (!menuPanelEl.contains(event.target) && event.target !== menuToggleEl) {
+      menuPanelEl.classList.remove('is-open');
+    }
+  });
+
+  window.addEventListener('hashchange', async () => {
+    await setRoute(getCurrentRoute());
+  });
+
   refreshBtn?.addEventListener('click', () => {
     loadOrders().catch((error) => {
       liveStatusEl.textContent = error.message;
@@ -396,15 +511,14 @@ async function initStaffDashboardPage() {
     }
   });
 
+  if (!window.location.hash) {
+    window.location.hash = '#/orders';
+  }
+  await setRoute(getCurrentRoute());
+
   window.addEventListener('beforeunload', async () => {
     if (pollTimer) clearInterval(pollTimer);
-    if (scanner && scanner.isScanning) {
-      try {
-        await scanner.stop();
-      } catch (_) {
-        // ignore scanner stop errors while leaving page
-      }
-    }
+    await stopScanner();
   });
 }
 

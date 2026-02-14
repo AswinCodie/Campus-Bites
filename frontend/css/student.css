@@ -762,14 +762,25 @@ body {
 
 .s-qr-canvas {
   margin: 14px auto 6px;
-  width: 260px;
-  min-height: 260px;
+  width: 100%;
+  max-width: 220px;
+  min-height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px dashed #cbd5e1;
   border-radius: 12px;
   background: #fff;
+  padding: 12px;
+}
+
+.s-qr-canvas canvas,
+.s-qr-canvas img {
+  width: 200px !important;
+  height: 200px !important;
+  max-width: 200px;
+  max-height: 200px;
+  display: block;
 }
 
 .s-qr-fallback {

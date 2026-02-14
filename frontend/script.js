@@ -343,7 +343,15 @@ async function openOrderQrModal(order) {
     const canvas = document.createElement('canvas');
     qrCanvas.appendChild(canvas);
     try {
-      await window.QRCode.toCanvas(canvas, order.qrToken, { width: 180, margin: 1 });
+      await window.QRCode.toCanvas(canvas, order.qrToken, {
+        width: 200,
+        margin: 2,
+        errorCorrectionLevel: 'L',
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      });
     } catch (_) {
       fallback.style.display = 'block';
       fallback.textContent = 'Unable to generate QR. Please try again.';
@@ -352,8 +360,11 @@ async function openOrderQrModal(order) {
     try {
       new window.QRCode(qrCanvas, {
         text: order.qrToken,
-        width: 180,
-        height: 180
+        width: 200,
+        height: 200,
+        correctLevel: window.QRCode.CorrectLevel.L,
+        colorDark: '#000000',
+        colorLight: '#ffffff'
       });
     } catch (_) {
       fallback.style.display = 'block';

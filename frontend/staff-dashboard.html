@@ -14,19 +14,17 @@
         <p id="staffIdentity" class="staff-muted">Loading session...</p>
       </div>
       <div class="staff-actions">
+        <button id="staffMenuToggle" class="staff-btn staff-btn-secondary staff-menu-toggle" type="button" aria-label="Open menu">&#9776;</button>
+        <nav id="staffMenuPanel" class="staff-menu-panel" aria-label="Staff navigation">
+          <a href="#/orders" data-staff-route="orders" class="staff-menu-link">Orders</a>
+          <a href="#/scan" data-staff-route="scan" class="staff-menu-link">Scan QR</a>
+        </nav>
         <button id="staffRefreshBtn" class="staff-btn staff-btn-secondary" type="button">Refresh</button>
         <button id="staffLogoutBtn" class="staff-btn staff-btn-primary" type="button">Logout</button>
       </div>
     </header>
 
-    <section class="staff-grid">
-      <article class="staff-card scanner-card">
-        <h2>Order Scanner</h2>
-        <p class="staff-muted">Scan Order ID QR to jump to that order.</p>
-        <div id="staffQrReader"></div>
-        <p id="staffScanStatus" class="staff-status-line">Scanner idle...</p>
-      </article>
-
+    <section id="staffOrdersView" class="staff-view">
       <article class="staff-card scanner-card">
         <h2>Orders</h2>
         <p id="staffLiveStatus" class="staff-status-line">Connecting live updates...</p>
@@ -43,6 +41,21 @@
             <h3 class="status-heading">Delivered</h3>
             <div id="staffOrdersDelivered" class="orders-list"></div>
           </section>
+        </div>
+      </article>
+    </section>
+
+    <section id="staffScanView" class="staff-view" style="display: none;">
+      <article class="staff-card scanner-card">
+        <h2>Order Scanner</h2>
+        <p class="staff-muted">Scan pickup QR to verify and deliver the order.</p>
+        <div id="staffQrReader"></div>
+        <p id="staffScanStatus" class="staff-status-line">Scanner idle...</p>
+      </article>
+      <article class="staff-card scanner-card">
+        <h2>Scan Result</h2>
+        <div id="staffScanResult" class="orders-list">
+          <article class="order-card"><p class="staff-muted">No scan yet.</p></article>
         </div>
       </article>
     </section>

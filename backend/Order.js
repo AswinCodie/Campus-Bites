@@ -8,6 +8,14 @@ const orderItemSchema = new mongoose.Schema({
 const orderSchema = new mongoose.Schema({
   orderID: { type: String, required: true, unique: true },
   canID: { type: String, required: true, index: true },
+  orderDate: { type: String, required: true, index: true }, // YYYY-MM-DD
+  dailyToken: {
+    type: String,
+    required: true,
+    minlength: 4,
+    maxlength: 4,
+    match: /^\d{4}$/
+  },
   studentID: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   items: { type: [orderItemSchema], required: true },
   total: { type: Number, required: true, min: 0 },
@@ -29,5 +37,7 @@ const orderSchema = new mongoose.Schema({
     default: 'Preparing'
   }
 }, { timestamps: true });
+
+orderSchema.index({ canID: 1, orderDate: 1, dailyToken: 1 }, { unique: true });
 
 module.exports = mongoose.model('Order', orderSchema);
