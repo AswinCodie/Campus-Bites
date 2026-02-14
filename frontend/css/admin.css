@@ -374,6 +374,11 @@ select:focus {
   color: var(--success);
 }
 
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .analytics-grid {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -428,6 +433,13 @@ select:focus {
   color: var(--muted);
   font-size: 14px;
   margin: 0;
+}
+
+.orders-date-row td {
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 700;
+  letter-spacing: 0.2px;
 }
 
 .visually-hidden {

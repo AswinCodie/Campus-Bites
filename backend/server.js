@@ -3,6 +3,9 @@ const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const http = require('http');
+const session = require('express-session');
+const { Server } = require('socket.io');
 
 require("dotenv").config();
 const connectDB = require('./db');
@@ -10,6 +13,7 @@ const Canteen = require('./Canteen');
 const User = require('./User');
 const Food = require('./Food');
 const Order = require('./Order');
+const Staff = require('./Staff');
 const {
   generateUniquePickupToken,
   signOrderQrToken,
@@ -17,15 +21,52 @@ const {
 } = require('./utils/orderTokens');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const ASSETS_DIR = path.join(__dirname, '..', 'assets');
+const ORDER_STATUS_PRIORITY = {
+  Preparing: 0,
+  Ready: 1,
+  Delivered: 2
+};
+const VALID_ORDER_STATUSES = ['Preparing', 'Ready', 'Delivered'];
 
-app.use(cors());
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'change-me-session-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: false,
+    maxAge: 1000 * 60 * 60 * 8
+  }
+});
+
+const io = new Server(server, {
+  cors: {
+    origin: true,
+    credentials: true
+  }
+});
+
+app.use(cors({ credentials: true, origin: true }));
 app.use(express.json());
+app.use(sessionMiddleware);
 app.use(express.static(FRONTEND_DIR));
 app.use('/assets', express.static(ASSETS_DIR));
+
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, {}, next);
+});
+
+io.on('connection', (socket) => {
+  const staffSession = socket.request?.session?.staff;
+  if (!staffSession?.canteenId) return;
+  socket.join(`staff:${staffSession.canteenId}`);
+});
 
 function randomToken(length = 6) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -101,6 +142,244 @@ function normalizeMobile(mobile) {
 function isValidMobile(mobile) {
   return /^\d{10}$/.test(String(mobile || ''));
 }
+
+function normalizeStatusSortValue(status) {
+  if (ORDER_STATUS_PRIORITY[status] !== undefined) return ORDER_STATUS_PRIORITY[status];
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function sortOrdersByStatusPriority(orders) {
+  return [...orders].sort((a, b) => {
+    const byPriority = normalizeStatusSortValue(a.status) - normalizeStatusSortValue(b.status);
+    if (byPriority !== 0) return byPriority;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+function getStartAndEndOfToday() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+function emitOrderEvent(eventName, orderDoc) {
+  if (!orderDoc?.canID) return;
+  const orderPayload = typeof orderDoc.toObject === 'function' ? orderDoc.toObject() : orderDoc;
+  io.to(`staff:${orderDoc.canID}`).emit(eventName, { order: orderPayload });
+}
+
+function requireStaffAuth(req, res, next) {
+  const staffSession = req.session?.staff;
+  if (!staffSession?.staffId || !staffSession?.canteenId) {
+    return res.status(401).json({ message: 'Staff authentication required' });
+  }
+  req.staffSession = staffSession;
+  return next();
+}
+
+function ensureStaffDashboardAuth(req, res, next) {
+  if (!req.session?.staff?.staffId) {
+    return res.redirect('/staff/login');
+  }
+  return next();
+}
+
+app.post('/api/staff/login', async (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+
+    if (!email || !password) {
+      return res.status(400).json({ message: 'email and password are required' });
+    }
+
+    const staff = await Staff.findOne({ email });
+    if (!staff) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    if (staff.status !== 'Approved') {
+      return res.status(403).json({ message: 'Staff account is not approved yet. Please contact admin.' });
+    }
+
+    const storedPassword = String(staff.password || '');
+    const isHashed = storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$') || storedPassword.startsWith('$2y$');
+    const isPasswordValid = isHashed
+      ? await bcrypt.compare(password, storedPassword)
+      : password === storedPassword;
+
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    req.session.staff = {
+      staffId: String(staff._id),
+      name: staff.name,
+      email: staff.email,
+      canteenId: staff.canteenId,
+      loginAt: new Date().toISOString()
+    };
+
+    return res.json({
+      message: 'Staff login successful',
+      session: req.session.staff,
+      staff: {
+        _id: staff._id,
+        name: staff.name,
+        email: staff.email,
+        canteenId: staff.canteenId
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Staff login failed', error: error.message });
+  }
+});
+
+app.post('/api/staff/signup', async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const canteenId = String(req.body?.canteenId || '').trim();
+
+    if (!name || !email || !password || !canteenId) {
+      return res.status(400).json({ message: 'name, email, password and canteenId are required' });
+    }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: 'Please provide a valid email address' });
+    }
+    if (!isValidPassword(password)) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    const canteen = await Canteen.findOne({ canID: canteenId }).select('_id');
+    if (!canteen) {
+      return res.status(404).json({ message: 'Invalid canteen ID' });
+    }
+
+    const existing = await Staff.findOne({ email });
+    if (existing) {
+      if (existing.status === 'Approved') {
+        return res.status(409).json({ message: 'Staff already approved. Please login.' });
+      }
+      return res.status(409).json({ message: `Staff request already exists with status: ${existing.status}` });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const staff = await Staff.create({
+      name,
+      email,
+      password: hashedPassword,
+      canteenId,
+      status: 'Pending'
+    });
+
+    return res.status(201).json({
+      message: 'Signup request sent. Ask admin to approve.',
+      staff: {
+        _id: staff._id,
+        name: staff.name,
+        email: staff.email,
+        canteenId: staff.canteenId,
+        status: staff.status
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Staff signup failed', error: error.message });
+  }
+});
+
+app.get('/api/staff/me', requireStaffAuth, async (req, res) => {
+  return res.json({ session: req.staffSession });
+});
+
+app.post('/api/staff/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    return res.json({ message: 'Logged out successfully' });
+  });
+});
+
+app.get('/api/orders', requireStaffAuth, async (req, res) => {
+  try {
+    const requestedCanteenId = String(req.query?.canteenId || '').trim();
+    if (requestedCanteenId && requestedCanteenId !== req.staffSession.canteenId) {
+      return res.status(403).json({ message: 'Cannot access orders from another canteen' });
+    }
+
+    const canteenId = req.staffSession.canteenId;
+    const { start, end } = getStartAndEndOfToday();
+    const orders = await Order.find({ canID: canteenId })
+      .where('createdAt').gte(start).lt(end)
+      .populate('items.foodID', 'name')
+      .sort({ createdAt: -1 });
+    const staffOrders = sortOrdersByStatusPriority(orders).map((order) => ({
+      _id: order._id,
+      orderID: order.orderID,
+      status: order.status,
+      total: order.total,
+      createdAt: order.createdAt,
+      items: (order.items || []).map((item) => ({
+        name: item.foodID?.name || 'Unknown',
+        quantity: item.quantity
+      })),
+      canID: order.canID
+    }));
+
+    return res.json(staffOrders);
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to load staff orders', error: error.message });
+  }
+});
+
+app.put('/api/orders/:orderId/status', requireStaffAuth, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const status = String(req.body?.status || '').trim();
+
+    if (!VALID_ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({ message: 'Invalid status value' });
+    }
+
+    const query = { canID: req.staffSession.canteenId };
+    if (mongoose.Types.ObjectId.isValid(orderId)) {
+      query.$or = [{ _id: orderId }, { orderID: orderId }];
+    } else {
+      query.orderID = orderId;
+    }
+
+    const updated = await Order.findOneAndUpdate(
+      query,
+      { status },
+      { new: true }
+    ).populate('items.foodID', 'name');
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Order not found for your canteen' });
+    }
+
+    emitOrderEvent('orderUpdated', updated);
+    return res.json({
+      message: 'Order status updated',
+      order: {
+        _id: updated._id,
+        orderID: updated.orderID,
+        status: updated.status,
+        total: updated.total,
+        createdAt: updated.createdAt,
+        canID: updated.canID,
+        items: (updated.items || []).map((item) => ({
+          name: item.foodID?.name || 'Unknown',
+          quantity: item.quantity
+        }))
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to update order status', error: error.message });
+  }
+});
 
 app.post('/admin/signup', async (req, res) => {
   try {
@@ -601,6 +880,7 @@ app.post('/order/place', async (req, res) => {
       status: 'Preparing'
     });
 
+    emitOrderEvent('newOrder', order);
     return res.status(201).json({ message: 'Order placed', order });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to place order', error: error.message });
@@ -674,7 +954,7 @@ app.get('/student/session/:studentID', async (req, res) => {
 app.patch('/order/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
-    const allowed = ['Preparing', 'Ready', 'Delivered'];
+    const allowed = VALID_ORDER_STATUSES;
 
     if (!allowed.includes(status)) {
       return res.status(400).json({ message: 'Invalid status value' });
@@ -690,9 +970,47 @@ app.patch('/order/:id/status', async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    emitOrderEvent('orderUpdated', updated);
     return res.json({ message: 'Order status updated', order: updated });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to update order status', error: error.message });
+  }
+});
+
+app.get('/admin/staffs/:canID', async (req, res) => {
+  try {
+    const staffs = await Staff.find({ canteenId: req.params.canID })
+      .select('-password')
+      .sort({ createdAt: -1 });
+    return res.json(staffs);
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to load staffs', error: error.message });
+  }
+});
+
+app.patch('/admin/staff/:id/review', async (req, res) => {
+  try {
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    const canID = String(req.body?.canID || '').trim();
+    const nextStatus = action === 'accept' ? 'Approved' : action === 'decline' ? 'Declined' : '';
+    if (!nextStatus) {
+      return res.status(400).json({ message: 'action must be accept or decline' });
+    }
+    if (!canID) {
+      return res.status(400).json({ message: 'canID is required' });
+    }
+    const staff = await Staff.findOneAndUpdate(
+      { _id: req.params.id, canteenId: canID },
+      { status: nextStatus },
+      { new: true }
+    ).select('-password');
+
+    if (!staff) {
+      return res.status(404).json({ message: 'Staff not found' });
+    }
+    return res.json({ message: `Staff ${nextStatus.toLowerCase()}`, staff });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to review staff request', error: error.message });
   }
 });
 
@@ -716,6 +1034,7 @@ app.patch('/api/orders/:id/mark-ready', async (req, res) => {
     order.status = 'Ready';
     await order.save();
 
+    emitOrderEvent('orderUpdated', order);
     return res.json({ message: 'Order marked as ready', order });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to mark order as ready', error: error.message });
@@ -773,6 +1092,7 @@ app.post('/api/orders/scan', async (req, res) => {
       return res.status(409).json({ message: 'Invalid or stale QR token for this order' });
     }
 
+    emitOrderEvent('orderUpdated', updated);
     return res.json({
       message: 'Pickup confirmed. Order marked as delivered',
       order: updated
@@ -786,8 +1106,20 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, 'student', 'login.html'));
 });
 
+app.get('/staff/login', (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, 'staff-login.html'));
+});
+
+app.get('/staff/signup', (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, 'staff-signup.html'));
+});
+
+app.get('/staff/dashboard', ensureStaffDashboardAuth, (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, 'staff-dashboard.html'));
+});
+
 connectDB().then(() => {
-  app.listen(PORT, HOST, () => {
+  server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
   });
 });

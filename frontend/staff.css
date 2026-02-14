@@ -1,0 +1,231 @@
+:root {
+  --staff-bg: #f8fafc;
+  --staff-surface: #ffffff;
+  --staff-border: #e2e8f0;
+  --staff-text: #0f172a;
+  --staff-muted: #64748b;
+  --staff-primary: #0ea5e9;
+  --staff-primary-strong: #0284c7;
+  --staff-ready: #0ea5e9;
+  --staff-delivered: #16a34a;
+  --staff-preparing: #f97316;
+  --staff-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--staff-bg);
+  color: var(--staff-text);
+}
+
+.staff-wrap {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.staff-card {
+  background: var(--staff-surface);
+  border: 1px solid var(--staff-border);
+  border-radius: 14px;
+  box-shadow: var(--staff-shadow);
+}
+
+.staff-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.staff-login-card {
+  width: min(420px, 100%);
+  padding: 20px;
+}
+
+.staff-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+
+.staff-muted {
+  margin: 0;
+  color: var(--staff-muted);
+}
+
+.staff-form {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.staff-input {
+  width: 100%;
+  height: 48px;
+  border: 1px solid var(--staff-border);
+  border-radius: 12px;
+  padding: 0 14px;
+  font-size: 15px;
+}
+
+.staff-btn {
+  min-height: 48px;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.staff-btn-primary {
+  background: linear-gradient(135deg, var(--staff-primary), var(--staff-primary-strong));
+  color: #fff;
+}
+
+.staff-btn-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.staff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.staff-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.staff-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.scanner-card {
+  padding: 12px;
+}
+
+#staffQrReader {
+  width: 100%;
+  min-height: 250px;
+}
+
+.staff-status-line {
+  margin-top: 8px;
+  color: var(--staff-muted);
+  font-size: 14px;
+}
+
+.orders-list {
+  display: grid;
+  gap: 10px;
+}
+
+.orders-board {
+  display: grid;
+  gap: 12px;
+}
+
+.status-section {
+  border: 1px solid var(--staff-border);
+  border-radius: 12px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.status-heading {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.order-card {
+  padding: 14px;
+  border: 1px solid var(--staff-border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.order-card.is-highlighted {
+  border-color: var(--staff-primary);
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.22);
+}
+
+.order-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.order-id {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.order-chip {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chip-preparing { background: #ffedd5; color: #9a3412; }
+.chip-ready { background: #dbeafe; color: #1d4ed8; }
+.chip-delivered { background: #dcfce7; color: #166534; }
+
+.order-meta,
+.order-items,
+.order-total {
+  margin: 8px 0 0;
+}
+
+.order-meta { color: var(--staff-muted); }
+.order-total { font-weight: 800; }
+
+.order-controls {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.status-btn {
+  min-height: 46px;
+  border-radius: 10px;
+  border: 1px solid var(--staff-border);
+  background: #fff;
+  font-weight: 700;
+}
+
+.status-btn.is-current {
+  color: #fff;
+  border: none;
+}
+
+.status-btn[data-status="Preparing"].is-current { background: var(--staff-preparing); }
+.status-btn[data-status="Ready"].is-current { background: var(--staff-ready); }
+.status-btn[data-status="Delivered"].is-current { background: var(--staff-delivered); }
+
+@media (min-width: 860px) {
+  .staff-grid {
+    grid-template-columns: 340px 1fr;
+    align-items: start;
+  }
+
+  .orders-board {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+}

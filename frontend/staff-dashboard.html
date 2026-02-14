@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Dashboard</title>
+  <link rel="stylesheet" href="/staff.css" />
+</head>
+<body>
+  <main class="staff-wrap">
+    <header class="staff-header">
+      <div>
+        <h1 class="staff-title">Staff Dashboard</h1>
+        <p id="staffIdentity" class="staff-muted">Loading session...</p>
+      </div>
+      <div class="staff-actions">
+        <button id="staffRefreshBtn" class="staff-btn staff-btn-secondary" type="button">Refresh</button>
+        <button id="staffLogoutBtn" class="staff-btn staff-btn-primary" type="button">Logout</button>
+      </div>
+    </header>
+
+    <section class="staff-grid">
+      <article class="staff-card scanner-card">
+        <h2>Order Scanner</h2>
+        <p class="staff-muted">Scan Order ID QR to jump to that order.</p>
+        <div id="staffQrReader"></div>
+        <p id="staffScanStatus" class="staff-status-line">Scanner idle...</p>
+      </article>
+
+      <article class="staff-card scanner-card">
+        <h2>Orders</h2>
+        <p id="staffLiveStatus" class="staff-status-line">Connecting live updates...</p>
+        <div id="staffOrdersBoard" class="orders-board">
+          <section class="status-section">
+            <h3 class="status-heading">Preparing</h3>
+            <div id="staffOrdersPreparing" class="orders-list"></div>
+          </section>
+          <section class="status-section">
+            <h3 class="status-heading">Ready</h3>
+            <div id="staffOrdersReady" class="orders-list"></div>
+          </section>
+          <section class="status-section">
+            <h3 class="status-heading">Delivered</h3>
+            <div id="staffOrdersDelivered" class="orders-list"></div>
+          </section>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/vendor/html5-qrcode.min.js"></script>
+  <script src="/staff.js"></script>
+</body>
+</html>

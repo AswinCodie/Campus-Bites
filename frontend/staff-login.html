@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Login</title>
+  <link rel="stylesheet" href="/staff.css" />
+</head>
+<body>
+  <main class="staff-login">
+    <section class="staff-card staff-login-card">
+      <h1 class="staff-title">Canteen Staff</h1>
+      <p class="staff-muted">Sign in to manage live orders.</p>
+      <p id="staffInfoMessage" class="staff-status-line"></p>
+      <form id="staffLoginForm" class="staff-form">
+        <input id="staffEmail" class="staff-input" type="email" placeholder="Email" required />
+        <input id="staffPassword" class="staff-input" type="password" placeholder="Password" required />
+        <button class="staff-btn staff-btn-primary" type="submit">Login</button>
+      </form>
+      <p id="staffLoginMessage" class="staff-status-line"></p>
+      <p class="staff-status-line">New staff? <a href="/staff/signup">Request signup</a></p>
+    </section>
+  </main>
+  <script src="/staff.js"></script>
+</body>
+</html>

@@ -15,6 +15,87 @@ const STUDENT_ROUTES = {
   profile: `${getStudentBasePath()}profile.html`
 };
 
+const NOTIFY_ROOT_ID = 'appNotifyRoot';
+const NOTIFY_STYLE_ID = 'appNotifyStyle';
+
+function ensureNotifySystem() {
+  if (!document.getElementById(NOTIFY_STYLE_ID)) {
+    const style = document.createElement('style');
+    style.id = NOTIFY_STYLE_ID;
+    style.textContent = `
+      #${NOTIFY_ROOT_ID} { position: fixed; inset: 0; pointer-events: none; z-index: 99999; }
+      #${NOTIFY_ROOT_ID} .notify-snack-wrap { position: fixed; top: 18px; right: 18px; display: flex; flex-direction: column; gap: 10px; width: min(430px, calc(100vw - 24px)); }
+      #${NOTIFY_ROOT_ID} .notify-snack { border-radius: 12px; color: #fff; padding: 12px 14px; font-size: 14px; line-height: 1.35; box-shadow: 0 12px 28px rgba(0,0,0,.26); transform: translateY(-8px); opacity: 0; animation: snackIn .16s ease forwards; pointer-events: auto; }
+      #${NOTIFY_ROOT_ID} .notify-snack.success { background: linear-gradient(135deg, #15803d, #22c55e); }
+      #${NOTIFY_ROOT_ID} .notify-snack.error { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+      #${NOTIFY_ROOT_ID} .notify-modal { position: fixed; inset: 0; background: rgba(2, 6, 23, .44); display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: auto; }
+      #${NOTIFY_ROOT_ID} .notify-panel { width: min(450px, 100%); background: #fff; border-radius: 16px; border-top: 5px solid #0f172a; box-shadow: 0 22px 50px rgba(0,0,0,.26); padding: 18px; animation: modalIn .18s ease; color: #0f172a; }
+      #${NOTIFY_ROOT_ID} .notify-panel h3 { margin: 0 0 8px; font-size: 18px; }
+      #${NOTIFY_ROOT_ID} .notify-panel p { margin: 0; font-size: 14px; line-height: 1.45; }
+      #${NOTIFY_ROOT_ID} .notify-panel .actions { margin-top: 16px; display: flex; justify-content: flex-end; }
+      #${NOTIFY_ROOT_ID} .notify-panel button { border: 0; border-radius: 10px; padding: 9px 14px; color: #fff; background: #0f172a; font-weight: 600; cursor: pointer; }
+      #${NOTIFY_ROOT_ID} .notify-panel.error { border-top-color: #b91c1c; }
+      #${NOTIFY_ROOT_ID} .notify-panel.error button { background: #b91c1c; }
+      #${NOTIFY_ROOT_ID} .notify-panel.success { border-top-color: #15803d; }
+      #${NOTIFY_ROOT_ID} .notify-panel.success button { background: #15803d; }
+      @keyframes snackIn { to { transform: translateY(0); opacity: 1; } }
+      @keyframes snackOut { to { transform: translateY(-8px); opacity: 0; } }
+      @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      @media (max-width: 640px) {
+        #${NOTIFY_ROOT_ID} .notify-snack-wrap { left: 12px; right: 12px; top: auto; bottom: 12px; width: auto; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  let root = document.getElementById(NOTIFY_ROOT_ID);
+  if (!root) {
+    root = document.createElement('div');
+    root.id = NOTIFY_ROOT_ID;
+    document.body.appendChild(root);
+  }
+  let snackWrap = root.querySelector('.notify-snack-wrap');
+  if (!snackWrap) {
+    snackWrap = document.createElement('div');
+    snackWrap.className = 'notify-snack-wrap';
+    root.appendChild(snackWrap);
+  }
+  return { root, snackWrap };
+}
+
+function showSnack(message, type = 'success') {
+  const { snackWrap } = ensureNotifySystem();
+  const node = document.createElement('div');
+  node.className = `notify-snack ${type === 'error' ? 'error' : 'success'}`;
+  node.textContent = String(message || '');
+  snackWrap.appendChild(node);
+  setTimeout(() => {
+    node.style.animation = 'snackOut .18s ease forwards';
+    setTimeout(() => node.remove(), 190);
+  }, 2300);
+}
+
+function showPopupAlert(message, type = 'info', title = '') {
+  const { root } = ensureNotifySystem();
+  const modal = document.createElement('div');
+  modal.className = 'notify-modal';
+  const panel = document.createElement('div');
+  panel.className = `notify-panel ${type === 'error' ? 'error' : type === 'success' ? 'success' : ''}`;
+  panel.innerHTML = `
+    <h3>${escapeHtml(title || (type === 'error' ? 'Error' : type === 'success' ? 'Success' : 'Message'))}</h3>
+    <p>${escapeHtml(String(message || ''))}</p>
+    <div class="actions"><button type="button">OK</button></div>
+  `;
+  modal.appendChild(panel);
+  root.appendChild(modal);
+
+  const close = () => modal.remove();
+  panel.querySelector('button')?.addEventListener('click', close);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) close();
+  });
+}
+
 function getCanID() {
   return localStorage.getItem('canID') || '';
 }
@@ -262,7 +343,7 @@ async function openOrderQrModal(order) {
     const canvas = document.createElement('canvas');
     qrCanvas.appendChild(canvas);
     try {
-      await window.QRCode.toCanvas(canvas, order.qrToken, { width: 240, margin: 1 });
+      await window.QRCode.toCanvas(canvas, order.qrToken, { width: 180, margin: 1 });
     } catch (_) {
       fallback.style.display = 'block';
       fallback.textContent = 'Unable to generate QR. Please try again.';
@@ -271,8 +352,8 @@ async function openOrderQrModal(order) {
     try {
       new window.QRCode(qrCanvas, {
         text: order.qrToken,
-        width: 240,
-        height: 240
+        width: 180,
+        height: 180
       });
     } catch (_) {
       fallback.style.display = 'block';
@@ -297,7 +378,7 @@ async function initSignupPage() {
     };
     const validationError = validateAuthPayload(payload);
     if (validationError) {
-      alert(validationError);
+      showSnack(validationError, 'error');
       return;
     }
 
@@ -309,10 +390,10 @@ async function initSignupPage() {
       });
       setCanID(data.canID);
       setAdminEmail(payload.email);
-      alert(`Signup successful. Your canID: ${data.canID}`);
+      showSnack(`Signup successful. Your canID: ${data.canID}`, 'success');
       window.location.href = 'dashboard.html';
     } catch (error) {
-      alert(error.message);
+      showSnack(error.message, 'error');
     }
   });
 }
@@ -327,7 +408,7 @@ async function initLoginPage() {
     };
     const validationError = validateAuthPayload(payload);
     if (validationError) {
-      alert(validationError);
+      showSnack(validationError, 'error');
       return;
     }
 
@@ -339,10 +420,10 @@ async function initLoginPage() {
       });
       setCanID(data.canID);
       setAdminEmail(payload.email);
-      alert(`Login successful. canID: ${data.canID}`);
+      showSnack(`Login successful. canID: ${data.canID}`, 'success');
       window.location.href = 'dashboard.html';
     } catch (error) {
-      alert(error.message);
+      showSnack(error.message, 'error');
     }
   });
 }
@@ -655,31 +736,130 @@ async function initStudentsPage() {
   loadStudents();
 }
 
+function renderStaffs(staffs) {
+  const tbody = document.getElementById('staffsBody');
+  if (!tbody) return;
+  if (!staffs.length) {
+    tbody.innerHTML = '<tr><td colspan="5"><p class="empty-hint">No staff requests found.</p></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = staffs.map((staff) => {
+    const normalizedStatus = staff.status || 'Pending';
+    const statusClass = normalizedStatus === 'Approved'
+      ? 'status-ready'
+      : normalizedStatus === 'Declined'
+        ? 'status-preparing'
+        : 'status-pending';
+
+    const pendingActions = normalizedStatus === 'Pending'
+      ? `
+        <button class="btn btn-success btn-small" data-action="accept" data-id="${staff._id}">Accept</button>
+        <button class="btn btn-danger btn-small" data-action="decline" data-id="${staff._id}">Decline</button>
+      `
+      : '<span class="empty-hint">No pending action</span>';
+
+    return `
+      <tr>
+        <td>${escapeHtml(staff.name || '')}</td>
+        <td>${escapeHtml(staff.email || '')}</td>
+        <td>${escapeHtml(staff.canteenId || '')}</td>
+        <td><span class="status-badge ${statusClass}">${escapeHtml(normalizedStatus)}</span></td>
+        <td><div class="btn-group">${pendingActions}</div></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function initStaffsPage() {
+  const canID = requireCanID();
+  if (!canID) return;
+  applyAdminHeaderIdentity(canID);
+  const tbody = document.getElementById('staffsBody');
+
+  async function loadStaffs() {
+    try {
+      const staffs = await safeFetch(`${API_BASE}/admin/staffs/${canID}`);
+      renderStaffs(staffs);
+    } catch (error) {
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="5"><p class="empty-hint">${escapeHtml(error.message)}</p></td></tr>`;
+      }
+    }
+  }
+
+  tbody?.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const action = button.dataset.action;
+    const staffId = button.dataset.id;
+    if (!staffId) return;
+
+    try {
+      await safeFetch(`${API_BASE}/admin/staff/${staffId}/review`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, canID })
+      });
+      loadStaffs();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  loadStaffs();
+}
+
 function renderOrders(orders) {
   const tbody = document.getElementById('ordersBody');
   tbody.innerHTML = '';
 
-  orders.forEach((order) => {
-    const itemsText = order.items
-      .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
-      .join(', ');
+  const groups = orders.reduce((acc, order) => {
+    const date = new Date(order.createdAt);
+    const key = Number.isNaN(date.getTime()) ? 'Unknown Date' : date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(order);
+    return acc;
+  }, {});
 
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${order.orderID}</td>
-      <td>${order.studentID?.name || 'Unknown'}</td>
-      <td>${itemsText}</td>
-      <td>${formatCurrency(order.total)}</td>
-      <td><span class="status-badge ${getStatusClass(order.status)}">${order.status}</span></td>
-      <td>
-        <div class="btn-group">
-          <button class="btn btn-small ${order.status === 'Preparing' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Preparing">Preparing</button>
-          <button class="btn btn-small ${order.status === 'Ready' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Ready">Ready</button>
-          <button class="btn btn-small ${order.status === 'Delivered' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Delivered">Delivered</button>
-        </div>
-      </td>
-    `;
-    tbody.appendChild(tr);
+  const orderedKeys = Object.keys(groups).sort((a, b) => {
+    if (a === 'Unknown Date') return 1;
+    if (b === 'Unknown Date') return -1;
+    return new Date(groups[b][0].createdAt).getTime() - new Date(groups[a][0].createdAt).getTime();
+  });
+
+  orderedKeys.forEach((dateKey) => {
+    const dateRow = document.createElement('tr');
+    dateRow.className = 'orders-date-row';
+    dateRow.innerHTML = `<td colspan="6">${escapeHtml(dateKey)}</td>`;
+    tbody.appendChild(dateRow);
+
+    groups[dateKey].forEach((order) => {
+      const itemsText = order.items
+        .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+        .join(', ');
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${order.orderID}</td>
+        <td>${order.studentID?.name || 'Unknown'}</td>
+        <td>${itemsText}</td>
+        <td>${formatCurrency(order.total)}</td>
+        <td><span class="status-badge ${getStatusClass(order.status)}">${order.status}</span></td>
+        <td>
+          <div class="btn-group">
+            <button class="btn btn-small ${order.status === 'Preparing' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Preparing">Preparing</button>
+            <button class="btn btn-small ${order.status === 'Ready' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Ready">Ready</button>
+            <button class="btn btn-small ${order.status === 'Delivered' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Delivered">Delivered</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
   });
 }
 
@@ -829,7 +1009,7 @@ async function initStudentSignupPage() {
     };
     const validationError = validateStudentSignupPayload(payload);
     if (validationError) {
-      alert(validationError);
+      showSnack(validationError, 'error');
       return;
     }
 
@@ -851,10 +1031,10 @@ async function initStudentSignupPage() {
         banned: data.student.banned
       });
 
-      alert('Student signup successful');
+      showSnack('Student signup successful', 'success');
       window.location.href = STUDENT_ROUTES.home;
     } catch (error) {
-      alert(error.message);
+      showSnack(error.message, 'error');
     }
   });
 }
@@ -873,9 +1053,18 @@ async function initStudentLoginPage() {
       identifier,
       password: document.getElementById('password').value
     };
-    if (loginWith === 'mobile' && !isValidMobile(normalizeMobile(identifier))) return alert('Please enter a valid 10-digit mobile number');
-    if (loginWith === 'email' && !isValidEmail(identifier)) return alert('Please enter a valid email address');
-    if (!isValidPassword(payload.password)) return alert('Password must be at least 8 characters');
+    if (loginWith === 'mobile' && !isValidMobile(normalizeMobile(identifier))) {
+      showSnack('Please enter a valid 10-digit mobile number', 'error');
+      return;
+    }
+    if (loginWith === 'email' && !isValidEmail(identifier)) {
+      showSnack('Please enter a valid email address', 'error');
+      return;
+    }
+    if (!isValidPassword(payload.password)) {
+      showSnack('Password must be at least 8 characters', 'error');
+      return;
+    }
 
     try {
       const data = await safeFetch(`${API_BASE}/student/login`, {
@@ -895,10 +1084,10 @@ async function initStudentLoginPage() {
         banned: data.student.banned
       });
 
-      alert('Student login successful');
+      showSnack('Student login successful', 'success');
       window.location.href = STUDENT_ROUTES.home;
     } catch (error) {
-      alert(error.message);
+      showSnack(error.message, 'error');
     }
   });
 }
@@ -1186,6 +1375,29 @@ function updateStudentCartBadge(animate = false) {
   }
 }
 
+function showStudentSnackbar(message) {
+  // Reuse one snackbar element to keep DOM simple and lightweight.
+  let snackbar = document.getElementById('studentSnackbar');
+  if (!snackbar) {
+    snackbar = document.createElement('div');
+    snackbar.id = 'studentSnackbar';
+    snackbar.className = 's-snackbar';
+    document.body.appendChild(snackbar);
+  }
+
+  // Reset animation state, then show the new message.
+  snackbar.textContent = message;
+  snackbar.classList.remove('is-visible');
+  void snackbar.offsetWidth;
+  snackbar.classList.add('is-visible');
+
+  // Auto-hide after a short delay.
+  clearTimeout(showStudentSnackbar._timer);
+  showStudentSnackbar._timer = setTimeout(() => {
+    snackbar.classList.remove('is-visible');
+  }, 1800);
+}
+
 async function initStudentHomePage() {
   const session = requireStudentSession();
   if (!session) return;
@@ -1267,6 +1479,7 @@ async function initStudentHomePage() {
     void button.offsetWidth;
     button.classList.add('is-added');
     updateStudentCartBadge(true);
+    showStudentSnackbar('Item added to cart');
   });
 }
 
@@ -1588,6 +1801,24 @@ async function initAdminScanPage() {
     }
   }
 
+  function pickPreferredBackCamera(cameras) {
+    if (!Array.isArray(cameras) || cameras.length === 0) return null;
+
+    const scoreCamera = (camera) => {
+      const label = String(camera?.label || '').toLowerCase();
+      let score = 0;
+
+      if (label.includes('back') || label.includes('rear') || label.includes('environment')) score += 100;
+      if (label.includes('main') || label.includes('standard') || label.includes('1x')) score += 30;
+      if (label.includes('wide') || label.includes('ultra') || label.includes('0.6') || label.includes('0.5')) score -= 40;
+      if (label.includes('front') || label.includes('selfie') || label.includes('user')) score -= 80;
+
+      return score;
+    };
+
+    return [...cameras].sort((a, b) => scoreCamera(b) - scoreCamera(a))[0] || null;
+  }
+
   try {
     if (!window.isSecureContext && !isLocalhost) {
       setStatus('Unable to start scanner: camera access on mobile requires HTTPS (or localhost).');
@@ -1606,13 +1837,33 @@ async function initAdminScanPage() {
     }
 
     scanner = new window.Html5Qrcode(readerId);
+    let cameraConfig = { facingMode: { ideal: 'environment' } };
+    if (typeof window.Html5Qrcode.getCameras === 'function') {
+      try {
+        const cameras = await window.Html5Qrcode.getCameras();
+        const preferredCamera = pickPreferredBackCamera(cameras);
+        if (preferredCamera?.id) {
+          cameraConfig = preferredCamera.id;
+        }
+      } catch (_) {
+        // fall back to facingMode if camera list fetch fails
+      }
+    }
+
     await scanner.start(
-      { facingMode: 'environment' },
+      cameraConfig,
       { fps: 10, qrbox: { width: 220, height: 220 } },
       async (decodedText) => {
         await processToken(decodedText);
       }
     );
+
+    try {
+      await scanner.applyVideoConstraints({ advanced: [{ zoom: 1 }] });
+    } catch (_) {
+      // zoom constraint may not be supported on all devices
+    }
+
     setStatus('Scanner started. Point camera at order QR');
   } catch (error) {
     const scannerError = getScannerErrorMessage(error);
@@ -1699,6 +1950,8 @@ function initStudentBanWatcher() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  ensureNotifySystem();
+  window.alert = (message) => showPopupAlert(message, 'info');
   initAuthPageTransitions();
   initCommonActions();
   initStudentBanWatcher();
@@ -1711,6 +1964,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (page === 'students') initStudentsPage();
   if (page === 'orders') initOrdersPage();
   if (page === 'analytics') initAnalyticsPage();
+  if (page === 'staffs') initStaffsPage();
   if (page === 'admin-scan') initAdminScanPage();
   if (page === 'student-signup') initStudentSignupPage();
   if (page === 'student-login') initStudentLoginPage();

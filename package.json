@@ -15,11 +15,13 @@
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
+    "express-session": "^1.19.0",
     "html5-qrcode": "^2.3.8",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.1.0",
     "mongoose": "^9.2.0",
     "qrcode": "^1.5.4",
-    "qrcodejs": "^1.0.0"
+    "qrcodejs": "^1.0.0",
+    "socket.io": "^4.8.3"
   }
 }

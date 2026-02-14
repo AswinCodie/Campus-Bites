@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Signup</title>
+  <link rel="stylesheet" href="/staff.css" />
+</head>
+<body>
+  <main class="staff-login">
+    <section class="staff-card staff-login-card">
+      <h1 class="staff-title">Staff Signup</h1>
+      <p class="staff-muted">Submit request for admin approval.</p>
+      <form id="staffSignupForm" class="staff-form">
+        <input id="staffSignupName" class="staff-input" type="text" placeholder="Full Name" required />
+        <input id="staffSignupEmail" class="staff-input" type="email" placeholder="Email" required />
+        <input id="staffSignupCanteenId" class="staff-input" type="text" placeholder="Can-ID (e.g. CAN-XXXX)" required />
+        <input id="staffSignupPassword" class="staff-input" type="password" placeholder="Password (min 8 chars)" required />
+        <button class="staff-btn staff-btn-primary" type="submit">Signup</button>
+      </form>
+      <p id="staffSignupMessage" class="staff-status-line"></p>
+      <p class="staff-status-line">Already have access? <a href="/staff/login">Go to login</a></p>
+    </section>
+  </main>
+  <script src="/staff.js"></script>
+</body>
+</html>
