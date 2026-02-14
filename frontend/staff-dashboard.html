@@ -9,17 +9,18 @@
 <body>
   <main class="staff-wrap">
     <header class="staff-header">
-      <div>
+
+      <div id="staffHeaderInfo">
+
+        <a class="s-logo" href="staff-dashboard.html">
+      <img class="s-brand-mark" src="/assets/logo.png" alt="CampusBites logo" />
+      <span>CampusBites</span>
+    </a>
+<br>
         <h1 class="staff-title">Staff Dashboard</h1>
         <p id="staffIdentity" class="staff-muted">Loading session...</p>
       </div>
       <div class="staff-actions">
-        <button id="staffMenuToggle" class="staff-btn staff-btn-secondary staff-menu-toggle" type="button" aria-label="Open menu">&#9776;</button>
-        <nav id="staffMenuPanel" class="staff-menu-panel" aria-label="Staff navigation">
-          <a href="#/orders" data-staff-route="orders" class="staff-menu-link">Orders</a>
-          <a href="#/scan" data-staff-route="scan" class="staff-menu-link">Scan QR</a>
-        </nav>
-        <button id="staffRefreshBtn" class="staff-btn staff-btn-secondary" type="button">Refresh</button>
         <button id="staffLogoutBtn" class="staff-btn staff-btn-primary" type="button">Logout</button>
       </div>
     </header>
@@ -27,17 +28,23 @@
     <section id="staffOrdersView" class="staff-view">
       <article class="staff-card scanner-card">
         <h2>Orders</h2>
+        <div id="staffOrderFilters" class="staff-filter-row" role="tablist" aria-label="Order status filter">
+          <button class="staff-filter-btn is-active" data-filter="all" type="button">All</button>
+          <button class="staff-filter-btn" data-filter="Preparing" type="button">Preparing</button>
+          <button class="staff-filter-btn" data-filter="Ready" type="button">Ready</button>
+          <button class="staff-filter-btn" data-filter="Delivered" type="button">Delivered</button>
+        </div>
         <p id="staffLiveStatus" class="staff-status-line">Connecting live updates...</p>
         <div id="staffOrdersBoard" class="orders-board">
-          <section class="status-section">
+          <section class="status-section" data-status-section="Preparing">
             <h3 class="status-heading">Preparing</h3>
             <div id="staffOrdersPreparing" class="orders-list"></div>
           </section>
-          <section class="status-section">
+          <section class="status-section" data-status-section="Ready">
             <h3 class="status-heading">Ready</h3>
             <div id="staffOrdersReady" class="orders-list"></div>
           </section>
-          <section class="status-section">
+          <section class="status-section" data-status-section="Delivered">
             <h3 class="status-heading">Delivered</h3>
             <div id="staffOrdersDelivered" class="orders-list"></div>
           </section>
@@ -60,6 +67,11 @@
       </article>
     </section>
   </main>
+
+  <nav class="staff-bottom-nav" aria-label="Staff bottom navigation">
+    <a href="#/orders" data-staff-bottom-route="orders" class="staff-bottom-link is-active">Orders</a>
+    <a href="#/scan" data-staff-bottom-route="scan" class="staff-bottom-link">QR Scan</a>
+  </nav>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/vendor/html5-qrcode.min.js"></script>

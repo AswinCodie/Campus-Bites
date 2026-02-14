@@ -199,6 +199,7 @@ body {
   text-decoration: none;
   color: var(--s-text);
   font-weight: 700;
+  padding-bottom: 20px;
 }
 
 .s-search-wrap {

@@ -136,13 +136,13 @@ async function initStaffDashboardPage() {
   const scanResultEl = document.getElementById('staffScanResult');
   const ordersViewEl = document.getElementById('staffOrdersView');
   const scanViewEl = document.getElementById('staffScanView');
-  const menuToggleEl = document.getElementById('staffMenuToggle');
-  const menuPanelEl = document.getElementById('staffMenuPanel');
-  const menuLinks = Array.from(document.querySelectorAll('[data-staff-route]'));
+  const bottomRouteLinks = Array.from(document.querySelectorAll('[data-staff-bottom-route]'));
+  const orderFiltersEl = document.getElementById('staffOrderFilters');
+  const orderFilterButtons = Array.from(document.querySelectorAll('#staffOrderFilters .staff-filter-btn'));
+  const statusSections = Array.from(document.querySelectorAll('[data-status-section]'));
   const identityEl = document.getElementById('staffIdentity');
   const liveStatusEl = document.getElementById('staffLiveStatus');
   const scanStatusEl = document.getElementById('staffScanStatus');
-  const refreshBtn = document.getElementById('staffRefreshBtn');
   const logoutBtn = document.getElementById('staffLogoutBtn');
   if (!ordersBoardEl || !preparingEl || !readyEl || !deliveredEl || !identityEl || !scanResultEl || !ordersViewEl || !scanViewEl) return;
 
@@ -153,6 +153,7 @@ async function initStaffDashboardPage() {
   let scanLock = false;
   let scannerStarting = false;
   let activeRoute = 'orders';
+  let activeOrderFilter = 'all';
 
   function renderOrderCard(order) {
     const itemsText = (order.items || [])
@@ -199,6 +200,20 @@ async function initStaffDashboardPage() {
     renderSection(preparingEl, orders.filter((order) => order.status === 'Preparing'), 'No preparing orders today.');
     renderSection(readyEl, orders.filter((order) => order.status === 'Ready'), 'No ready orders today.');
     renderSection(deliveredEl, orders.filter((order) => order.status === 'Delivered'), 'No delivered orders today.');
+    applyOrderFilter(activeOrderFilter);
+  }
+
+  function applyOrderFilter(filter) {
+    activeOrderFilter = filter || 'all';
+    orderFilterButtons.forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.filter === activeOrderFilter);
+    });
+
+    statusSections.forEach((section) => {
+      const sectionStatus = section.dataset.statusSection;
+      const visible = activeOrderFilter === 'all' || activeOrderFilter === sectionStatus;
+      section.style.display = visible ? '' : 'none';
+    });
   }
 
   function renderScanResult(order, message = '') {
@@ -214,10 +229,11 @@ async function initStaffDashboardPage() {
     scanResultEl.innerHTML = `
       <article class="order-card">
         <div class="order-head">
-          <p class="order-id">${escapeHtml(order.orderID || '-')}</p>
+          <p class="scan-order-small">Order: ${escapeHtml(order.orderID || '-')}</p>
           <span class="order-chip chip-delivered">Delivered</span>
         </div>
-        <p class="order-meta">Token: ${escapeHtml(order.dailyToken || '-')} | Date: ${escapeHtml(order.orderDate || '-')}</p>
+        <p class="scan-token">${escapeHtml(order.dailyToken || '-')}</p>
+        <p class="order-meta">Date: ${escapeHtml(order.orderDate || '-')}</p>
         <p class="order-items">${escapeHtml(itemsText)}</p>
         <p class="order-total">Total: ${formatCurrency(order.total)}</p>
       </article>
@@ -396,10 +412,10 @@ async function initStaffDashboardPage() {
     activeRoute = route === 'scan' ? 'scan' : 'orders';
     ordersViewEl.style.display = activeRoute === 'orders' ? 'grid' : 'none';
     scanViewEl.style.display = activeRoute === 'scan' ? 'grid' : 'none';
-    menuLinks.forEach((link) => {
-      link.classList.toggle('is-active', link.dataset.staffRoute === activeRoute);
+    document.body.classList.toggle('is-scan-view', activeRoute === 'scan');
+    bottomRouteLinks.forEach((link) => {
+      link.classList.toggle('is-active', link.dataset.staffBottomRoute === activeRoute);
     });
-    menuPanelEl?.classList.remove('is-open');
 
     if (activeRoute === 'scan') {
       await startScanner();
@@ -451,7 +467,10 @@ async function initStaffDashboardPage() {
   try {
     const me = await staffFetch(`${STAFF_API_BASE}/api/staff/me`);
     staffSession = me.session;
-    identityEl.textContent = `${staffSession.name} (${staffSession.email}) | Canteen: ${staffSession.canteenId}`;
+    identityEl.innerHTML = `
+  <div>${staffSession.name} (${staffSession.email})</div>
+  <div>Canteen: ${staffSession.canteenId}</div>
+`;
   } catch (_) {
     window.location.href = STAFF_ROUTES.login;
     return;
@@ -482,25 +501,14 @@ async function initStaffDashboardPage() {
     }
   });
 
-  menuToggleEl?.addEventListener('click', () => {
-    menuPanelEl?.classList.toggle('is-open');
-  });
-
-  document.addEventListener('click', (event) => {
-    if (!menuPanelEl || !menuToggleEl) return;
-    if (!menuPanelEl.contains(event.target) && event.target !== menuToggleEl) {
-      menuPanelEl.classList.remove('is-open');
-    }
+  orderFiltersEl?.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-filter]');
+    if (!button) return;
+    applyOrderFilter(button.dataset.filter);
   });
 
   window.addEventListener('hashchange', async () => {
     await setRoute(getCurrentRoute());
-  });
-
-  refreshBtn?.addEventListener('click', () => {
-    loadOrders().catch((error) => {
-      liveStatusEl.textContent = error.message;
-    });
   });
 
   logoutBtn?.addEventListener('click', async () => {
