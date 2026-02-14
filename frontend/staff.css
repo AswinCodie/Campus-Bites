@@ -338,6 +338,25 @@ body.is-scan-view #staffLogoutBtn {
   margin-top: 0;
 }
 
+.scan-result-pop {
+  animation: scanResultPop 260ms ease-out;
+  transform-origin: top center;
+}
+
+@keyframes scanResultPop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 @media (min-width: 860px) {
   .staff-grid {
     grid-template-columns: 340px 1fr;
@@ -381,3 +400,4 @@ body.is-scan-view #staffLogoutBtn {
     font-size: 14px;
   }
 }
+

@@ -218,7 +218,7 @@ async function initStaffDashboardPage() {
 
   function renderScanResult(order, message = '') {
     if (!order) {
-      scanResultEl.innerHTML = `<article class="order-card"><p class="staff-muted">${escapeHtml(message || 'No scan yet.')}</p></article>`;
+      scanResultEl.innerHTML = `<article class="order-card scan-result-pop"><p class="staff-muted">${escapeHtml(message || 'No scan yet.')}</p></article>`;
       return;
     }
 
@@ -227,7 +227,7 @@ async function initStaffDashboardPage() {
       .join(', ');
 
     scanResultEl.innerHTML = `
-      <article class="order-card">
+      <article class="order-card scan-result-pop">
         <div class="order-head">
           <p class="scan-order-small">Order: ${escapeHtml(order.orderID || '-')}</p>
           <span class="order-chip chip-delivered">Delivered</span>
@@ -535,3 +535,5 @@ document.addEventListener('DOMContentLoaded', () => {
   if (document.getElementById('staffSignupForm')) initStaffSignupPage();
   if (document.getElementById('staffOrdersBoard')) initStaffDashboardPage();
 });
+
+
