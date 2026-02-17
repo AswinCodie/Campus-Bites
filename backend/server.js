@@ -27,6 +27,7 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const ASSETS_DIR = path.join(__dirname, '..', 'assets');
+const STUDENT_DIR = path.join(FRONTEND_DIR, 'student');
 const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
 const ORDER_STATUS_PRIORITY = {
   Preparing: 0,
@@ -34,6 +35,16 @@ const ORDER_STATUS_PRIORITY = {
   Delivered: 2
 };
 const VALID_ORDER_STATUSES = ['Preparing', 'Ready', 'Delivered'];
+const STUDENT_PAGE_FILE_MAP = {
+  login: 'login.html',
+  signup: 'signup.html',
+  home: 'home.html',
+  cart: 'cart.html',
+  payment: 'payment.html',
+  'order-success': 'order-success.html',
+  'my-orders': 'my-orders.html',
+  profile: 'profile.html'
+};
 
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'change-me-session-secret',
@@ -57,8 +68,57 @@ const io = new Server(server, {
 app.use(cors({ credentials: true, origin: true }));
 app.use(express.json());
 app.use(sessionMiddleware);
-app.use(express.static(FRONTEND_DIR));
 app.use('/assets', express.static(ASSETS_DIR));
+
+function ensureStudentPageAuth(req, res, next) {
+  if (req.method !== 'GET') {
+    return next();
+  }
+  const studentSession = req.session?.student;
+  let requestPath = String(req.path || '').toLowerCase();
+  if (requestPath === '/' || requestPath === '') {
+    return next();
+  }
+  if (requestPath.endsWith('.html')) {
+    requestPath = requestPath.slice(0, -5);
+  }
+  const pageKey = requestPath.replace(/^\//, '');
+  if (!STUDENT_PAGE_FILE_MAP[pageKey]) {
+    return next();
+  }
+  const isPublicStudentPage = pageKey === 'login' || pageKey === 'signup';
+  if (!studentSession?.studentId || !studentSession?.canID) {
+    if (isPublicStudentPage) return next();
+    return res.redirect('/student/login');
+  }
+  if (isPublicStudentPage) {
+    return res.redirect('/student/home');
+  }
+  return next();
+}
+
+app.get('/student', ensureStudentPageAuth, (req, res) => {
+  if (req.session?.student?.studentId && req.session?.student?.canID) {
+    return res.redirect('/student/home');
+  }
+  return res.redirect('/student/login');
+});
+
+app.get('/student/:page', ensureStudentPageAuth, (req, res, next) => {
+  const page = String(req.params.page || '').toLowerCase();
+  const fileName = STUDENT_PAGE_FILE_MAP[page];
+  if (!fileName) return next();
+  return res.sendFile(path.join(STUDENT_DIR, fileName));
+});
+
+app.get('/student/:page.html', ensureStudentPageAuth, (req, res, next) => {
+  const page = String(req.params.page || '').toLowerCase();
+  if (!STUDENT_PAGE_FILE_MAP[page]) return next();
+  return res.redirect(`/student/${page}`);
+});
+
+app.use('/student', ensureStudentPageAuth, express.static(STUDENT_DIR));
+app.use(express.static(FRONTEND_DIR));
 
 io.use((socket, next) => {
   sessionMiddleware(socket.request, {}, next);
@@ -286,6 +346,15 @@ function requireStaffAuth(req, res, next) {
     return res.status(401).json({ message: 'Staff authentication required' });
   }
   req.staffSession = staffSession;
+  return next();
+}
+
+function requireStudentAuth(req, res, next) {
+  const studentSession = req.session?.student;
+  if (!studentSession?.studentId || !studentSession?.canID) {
+    return res.status(401).json({ message: 'Student authentication required' });
+  }
+  req.studentSession = studentSession;
   return next();
 }
 
@@ -643,6 +712,14 @@ app.post('/student/signup', async (req, res) => {
       password: hashedPassword
     });
 
+    req.session.student = {
+      studentId: String(student._id),
+      canID: student.canID,
+      name: student.name,
+      email: student.email,
+      loginAt: new Date().toISOString()
+    };
+
     return res.status(201).json({
       message: 'Student signup successful',
       student: {
@@ -710,6 +787,14 @@ app.post('/student/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    req.session.student = {
+      studentId: String(student._id),
+      canID: student.canID,
+      name: student.name,
+      email: student.email,
+      loginAt: new Date().toISOString()
+    };
+
     return res.json({
       message: 'Student login successful',
       student: {
@@ -726,6 +811,15 @@ app.post('/student/login', async (req, res) => {
   } catch (error) {
     return res.status(500).json({ message: 'Student login failed', error: error.message });
   }
+});
+
+app.post('/student/logout', (req, res) => {
+  if (req.session?.student) {
+    delete req.session.student;
+  }
+  req.session.save(() => {
+    res.json({ message: 'Student logout successful' });
+  });
 });
 
 app.get('/admin/dashboard/:canID', async (req, res) => {
@@ -1023,10 +1117,13 @@ async function createOrderWithDailyToken({ canID, studentID, items }) {
   throw new Error('Unable to create order');
 }
 
-app.post('/order/place', async (req, res) => {
+app.post('/order/place', requireStudentAuth, async (req, res) => {
   try {
-    const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const canID = req.studentSession.canID;
     const { studentID, items } = req.body;
+    if (String(studentID || '') !== req.studentSession.studentId) {
+      return res.status(403).json({ message: 'Student mismatch for this session' });
+    }
     const order = await createOrderWithDailyToken({ canID, studentID, items });
     emitOrderEvent('newOrder', order);
     return res.status(201).json({ message: 'Order placed', order });
@@ -1035,10 +1132,13 @@ app.post('/order/place', async (req, res) => {
   }
 });
 
-app.post('/payment/razorpay/order', async (req, res) => {
+app.post('/payment/razorpay/order', requireStudentAuth, async (req, res) => {
   try {
-    const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const canID = req.studentSession.canID;
     const { studentID, items } = req.body || {};
+    if (String(studentID || '') !== req.studentSession.studentId) {
+      return res.status(403).json({ message: 'Student mismatch for this session' });
+    }
     const { total } = await buildValidatedOrderInput({ canID, studentID, items });
     const amount = toPaise(total);
     if (amount <= 0) {
@@ -1072,9 +1172,9 @@ app.post('/payment/razorpay/order', async (req, res) => {
   }
 });
 
-app.post('/payment/razorpay/verify-and-place', async (req, res) => {
+app.post('/payment/razorpay/verify-and-place', requireStudentAuth, async (req, res) => {
   try {
-    const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const canID = req.studentSession.canID;
     const { studentID, items } = req.body || {};
     const razorpayOrderId = String(req.body?.razorpay_order_id || '').trim();
     const razorpayPaymentId = String(req.body?.razorpay_payment_id || '').trim();
@@ -1082,6 +1182,9 @@ app.post('/payment/razorpay/verify-and-place', async (req, res) => {
 
     if (!canID || !studentID || !Array.isArray(items) || !items.length) {
       return res.status(400).json({ message: 'canID, studentID and items are required' });
+    }
+    if (String(studentID || '') !== req.studentSession.studentId) {
+      return res.status(403).json({ message: 'Student mismatch for this session' });
     }
     if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
       return res.status(400).json({ message: 'Razorpay payment fields are required' });
@@ -1152,13 +1255,16 @@ app.get('/orders/:canID', async (req, res) => {
   }
 });
 
-app.get('/student/orders/:studentID', async (req, res) => {
+app.get('/student/orders/:studentID', requireStudentAuth, async (req, res) => {
   try {
     const { studentID } = req.params;
-    const { canID } = req.query;
+    const canID = String(req.query?.canID || '').trim();
 
     if (!canID) {
       return res.status(400).json({ message: 'canID is required as query parameter' });
+    }
+    if (studentID !== req.studentSession.studentId || canID !== req.studentSession.canID) {
+      return res.status(403).json({ message: 'Session does not match requested student data' });
     }
 
     if (!mongoose.Types.ObjectId.isValid(studentID)) {
@@ -1175,13 +1281,16 @@ app.get('/student/orders/:studentID', async (req, res) => {
   }
 });
 
-app.get('/student/session/:studentID', async (req, res) => {
+app.get('/student/session/:studentID', requireStudentAuth, async (req, res) => {
   try {
     const { studentID } = req.params;
-    const { canID } = req.query;
+    const canID = String(req.query?.canID || '').trim();
 
     if (!canID) {
       return res.status(400).json({ message: 'canID is required as query parameter' });
+    }
+    if (studentID !== req.studentSession.studentId || canID !== req.studentSession.canID) {
+      return res.status(403).json({ message: 'Session does not match requested student data' });
     }
 
     if (!mongoose.Types.ObjectId.isValid(studentID)) {
@@ -1447,7 +1556,7 @@ app.post('/api/orders/scan', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, 'student', 'login.html'));
+  res.redirect('/student/login');
 });
 
 app.get('/staff/login', (req, res) => {

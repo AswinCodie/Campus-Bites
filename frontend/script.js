@@ -4,15 +4,21 @@ function getStudentBasePath() {
   return pathname.includes('/frontend/') ? '/frontend/student/' : '/student/';
 }
 
+function studentRoute(slug) {
+  const base = getStudentBasePath();
+  if (base.includes('/frontend/')) return `${base}${slug}.html`;
+  return `${base}${slug}`;
+}
+
 const STUDENT_ROUTES = {
-  login: `${getStudentBasePath()}login.html`,
-  signup: `${getStudentBasePath()}signup.html`,
-  home: `${getStudentBasePath()}home.html`,
-  cart: `${getStudentBasePath()}cart.html`,
-  payment: `${getStudentBasePath()}payment.html`,
-  success: `${getStudentBasePath()}order-success.html`,
-  orders: `${getStudentBasePath()}my-orders.html`,
-  profile: `${getStudentBasePath()}profile.html`
+  login: studentRoute('login'),
+  signup: studentRoute('signup'),
+  home: studentRoute('home'),
+  cart: studentRoute('cart'),
+  payment: studentRoute('payment'),
+  success: studentRoute('order-success'),
+  orders: studentRoute('my-orders'),
+  profile: studentRoute('profile')
 };
 
 const NOTIFY_ROOT_ID = 'appNotifyRoot';
@@ -1038,6 +1044,9 @@ async function initStudentSignupPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (!data?.student?._id || !data?.student?.canID) {
+        throw new Error(data?.message || 'Invalid signup response from server');
+      }
 
       setStudentSession({
         studentID: data.student._id,
@@ -1091,6 +1100,9 @@ async function initStudentLoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (!data?.student?._id || !data?.student?.canID) {
+        throw new Error(data?.message || 'Invalid login response from server');
+      }
 
       setStudentSession({
         studentID: data.student._id,
@@ -1974,7 +1986,12 @@ function initCommonActions() {
 
   const studentLogoutBtn = document.getElementById('studentLogoutBtn');
   if (studentLogoutBtn) {
-    studentLogoutBtn.addEventListener('click', () => {
+    studentLogoutBtn.addEventListener('click', async () => {
+      try {
+        await safeFetch(`${API_BASE}/student/logout`, { method: 'POST' });
+      } catch (_) {
+        // Local cleanup and redirect still proceed even if API call fails.
+      }
       clearStudentSession();
       clearStudentCart();
       window.location.href = STUDENT_ROUTES.login;
