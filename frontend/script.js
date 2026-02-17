@@ -956,9 +956,17 @@ async function initAnalyticsPage() {
         revenueTrendList.innerHTML = revenueTrend.map((entry) => {
           const total = Number(entry.total || 0);
           const barWidth = Math.max((total / maxRevenue) * 100, 2);
+          const fallbackDate = entry.day
+            ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(entry.day).padStart(2, '0')}`
+            : '';
+          const rawDate = String(entry.date || fallbackDate || '').trim();
+          const parsed = rawDate ? new Date(`${rawDate}T00:00:00`) : null;
+          const dateLabel = parsed && !Number.isNaN(parsed.getTime())
+            ? parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+            : escapeHtml(rawDate || '-');
           return `
             <li class="analytics-row">
-              <span class="analytics-key">Date ${entry.day}</span>
+              <span class="analytics-key">${dateLabel}</span>
               <span class="analytics-bar-wrap"><span class="analytics-bar" style="width:${barWidth}%"></span></span>
               <span class="analytics-value">${formatCurrency(total)}</span>
             </li>
@@ -1608,23 +1616,84 @@ async function initStudentPaymentPage() {
     }
 
     try {
-      const response = await safeFetch(`${API_BASE}/order/place`, {
+      if (typeof window.Razorpay !== 'function') {
+        throw new Error('Payment gateway failed to load. Please refresh and try again.');
+      }
+
+      if (payBtn) payBtn.disabled = true;
+
+      const orderPayload = {
+        canID: session.canID,
+        studentID: session.studentID,
+        items: cart.map((item) => ({
+          foodID: item.foodID,
+          quantity: Number(item.quantity)
+        }))
+      };
+
+      const razorpayOrder = await safeFetch(`${API_BASE}/payment/razorpay/order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          canID: session.canID,
-          studentID: session.studentID,
-          items: cart.map((item) => ({
-            foodID: item.foodID,
-            quantity: Number(item.quantity)
-          }))
-        })
+        body: JSON.stringify(orderPayload)
       });
-      localStorage.setItem('studentLastOrderID', response.order?.orderID || '');
-      clearStudentCart();
-      window.location.href = STUDENT_ROUTES.success;
+
+      const rz = new window.Razorpay({
+        key: razorpayOrder.keyId,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency || 'INR',
+        name: 'CampusBites',
+        description: 'Student canteen order payment',
+        order_id: razorpayOrder.razorpayOrderId,
+        prefill: {
+          name: session.name || '',
+          email: session.email || '',
+          contact: normalizeMobile(session.mobile || '')
+        },
+        notes: {
+          canID: session.canID,
+          studentID: session.studentID
+        },
+        theme: {
+          color: '#f97316'
+        },
+        modal: {
+          ondismiss: () => {
+            if (payBtn) payBtn.disabled = false;
+          }
+        },
+        handler: async (paymentResult) => {
+          try {
+            const response = await safeFetch(`${API_BASE}/payment/razorpay/verify-and-place`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...orderPayload,
+                razorpay_order_id: paymentResult.razorpay_order_id,
+                razorpay_payment_id: paymentResult.razorpay_payment_id,
+                razorpay_signature: paymentResult.razorpay_signature
+              })
+            });
+
+            localStorage.setItem('studentLastOrderID', response.order?.orderID || '');
+            clearStudentCart();
+            window.location.href = STUDENT_ROUTES.success;
+          } catch (error) {
+            showSnack(error.message || 'Payment verification failed', 'error');
+            if (payBtn) payBtn.disabled = false;
+          }
+        }
+      });
+
+      rz.on('payment.failed', (event) => {
+        const reason = event?.error?.description || event?.error?.reason || 'Payment failed. Please try again.';
+        showSnack(reason, 'error');
+        if (payBtn) payBtn.disabled = false;
+      });
+
+      rz.open();
     } catch (error) {
       alert(error.message);
+      if (payBtn) payBtn.disabled = false;
     }
   });
 }

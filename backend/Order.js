@@ -5,10 +5,19 @@ const orderItemSchema = new mongoose.Schema({
   quantity: { type: Number, required: true, min: 1 }
 }, { _id: false });
 
+function formatDateOnly(value) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return value;
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 const orderSchema = new mongoose.Schema({
   orderID: { type: String, required: true, unique: true },
   canID: { type: String, required: true, index: true },
-  orderDate: { type: String, required: true, index: true }, // YYYY-MM-DD
+  // Store as Date (normalized to start-of-day in server logic).
+  orderDate: { type: Date, required: true, index: true },
   dailyToken: {
     type: String,
     required: true,
@@ -24,7 +33,6 @@ const orderSchema = new mongoose.Schema({
     minlength: 4,
     maxlength: 4,
     match: /^\d{4}$/,
-    unique: true,
     sparse: true
   },
   qrToken: {
@@ -36,8 +44,23 @@ const orderSchema = new mongoose.Schema({
     enum: ['Preparing', 'Ready', 'Delivered'],
     default: 'Preparing'
   }
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  toJSON: {
+    transform: (_doc, ret) => {
+      ret.orderDate = formatDateOnly(ret.orderDate);
+      return ret;
+    }
+  },
+  toObject: {
+    transform: (_doc, ret) => {
+      ret.orderDate = formatDateOnly(ret.orderDate);
+      return ret;
+    }
+  }
+});
 
 orderSchema.index({ canID: 1, orderDate: 1, dailyToken: 1 }, { unique: true });
+orderSchema.index({ canID: 1, orderDate: 1, pickupToken: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Order', orderSchema);

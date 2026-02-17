@@ -4,6 +4,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const http = require('http');
+const crypto = require('crypto');
 const session = require('express-session');
 const { Server } = require('socket.io');
 
@@ -26,6 +27,7 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const ASSETS_DIR = path.join(__dirname, '..', 'assets');
+const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
 const ORDER_STATUS_PRIORITY = {
   Preparing: 0,
   Ready: 1,
@@ -104,6 +106,36 @@ function formatOrderDateKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function toOrderDate(value = new Date()) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const error = new Error('Invalid orderDate');
+    error.status = 400;
+    throw error;
+  }
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function parseOrderDateKey(value) {
+  const raw = String(value || '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
 function createDailyToken() {
   return String(1000 + Math.floor(Math.random() * 9000));
 }
@@ -122,8 +154,57 @@ function buildOrderQrPayload({ orderID, dailyToken, canID, orderDate }) {
     orderId: String(orderID),
     token: String(dailyToken),
     canteenId: String(canID),
-    date: String(orderDate)
+    date: formatOrderDateKey(toOrderDate(orderDate))
   });
+}
+
+function getRazorpayCredentials() {
+  const keyId = String(process.env.RAZORPAY_KEY_ID || '').trim();
+  const keySecret = String(process.env.RAZORPAY_KEY_SECRET || '').trim();
+  if (!keyId || !keySecret) {
+    const error = new Error('Razorpay is not configured on server');
+    error.status = 500;
+    throw error;
+  }
+  return { keyId, keySecret };
+}
+
+async function callRazorpay(pathname, { method = 'GET', body, keyId, keySecret } = {}) {
+  const headers = {
+    Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString('base64')}`
+  };
+  if (body) headers['Content-Type'] = 'application/json';
+
+  const response = await fetch(`${RAZORPAY_API_BASE}${pathname}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  const raw = await response.text();
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    data = {};
+  }
+
+  if (!response.ok) {
+    const message = data?.error?.description || data?.error?.reason || data?.message || 'Razorpay request failed';
+    const error = new Error(message);
+    error.status = 502;
+    throw error;
+  }
+
+  return data;
+}
+
+function createReceiptToken() {
+  return `rcpt_${Date.now()}_${randomToken(4)}`;
+}
+
+function toPaise(amountInRupees) {
+  return Math.round(Number(amountInRupees || 0) * 100);
 }
 
 function normalizeFoodCategory(value) {
@@ -384,7 +465,7 @@ app.put('/api/orders/:orderId/status', requireStaffAuth, async (req, res) => {
     const updated = await Order.findOneAndUpdate(
       query,
       { status },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('items.foodID', 'name');
 
     if (!updated) {
@@ -701,14 +782,14 @@ app.get('/admin/analytics/:canID', async (req, res) => {
     const revenueTrendMap = orders
       .filter((order) => order.createdAt >= startOfMonth)
       .reduce((acc, order) => {
-        const day = String(order.createdAt.getDate()).padStart(2, '0');
-        acc[day] = (acc[day] || 0) + Number(order.total || 0);
+        const dateKey = formatOrderDateKey(order.createdAt);
+        acc[dateKey] = (acc[dateKey] || 0) + Number(order.total || 0);
         return acc;
       }, {});
 
     const revenueTrend = Object.entries(revenueTrendMap)
-      .sort((a, b) => Number(a[0]) - Number(b[0]))
-      .map(([day, total]) => ({ day, total }));
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, total]) => ({ date, total }));
 
     const topMenuItems = Object.entries(itemCounts)
       .sort((a, b) => b[1] - a[1])
@@ -795,7 +876,7 @@ app.patch('/food/:id', async (req, res) => {
       updates.imageUrl = normalizeImageUrl(req.body.imageUrl);
     }
 
-    const updated = await Food.findByIdAndUpdate(req.params.id, updates, { new: true });
+    const updated = await Food.findByIdAndUpdate(req.params.id, updates, { returnDocument: 'after' });
     if (!updated) {
       return res.status(404).json({ message: 'Food not found' });
     }
@@ -841,7 +922,7 @@ app.patch('/student/:id/ban', async (req, res) => {
         banned: isBanned,
         bannedAt: isBanned ? new Date() : null
       },
-      { new: true }
+      { returnDocument: 'after' }
     ).select('-password');
 
     return res.json({ 
@@ -908,7 +989,7 @@ async function buildValidatedOrderInput({ canID, studentID, items }) {
 async function createOrderWithDailyToken({ canID, studentID, items }) {
   const { normalizedItems, total } = await buildValidatedOrderInput({ canID, studentID, items });
   const orderID = await generateUniqueOrderID();
-  const orderDate = formatOrderDateKey(new Date());
+  const orderDate = toOrderDate(new Date());
 
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const dailyToken = await generateUniqueDailyToken({ canID, orderDate });
@@ -951,6 +1032,98 @@ app.post('/order/place', async (req, res) => {
     return res.status(201).json({ message: 'Order placed', order });
   } catch (error) {
     return res.status(error.status || 500).json({ message: 'Failed to place order', error: error.message });
+  }
+});
+
+app.post('/payment/razorpay/order', async (req, res) => {
+  try {
+    const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const { studentID, items } = req.body || {};
+    const { total } = await buildValidatedOrderInput({ canID, studentID, items });
+    const amount = toPaise(total);
+    if (amount <= 0) {
+      return res.status(400).json({ message: 'Order total must be greater than zero' });
+    }
+
+    const { keyId, keySecret } = getRazorpayCredentials();
+    const razorpayOrder = await callRazorpay('/orders', {
+      method: 'POST',
+      keyId,
+      keySecret,
+      body: {
+        amount,
+        currency: 'INR',
+        receipt: createReceiptToken(),
+        notes: {
+          canID,
+          studentID: String(studentID || '')
+        }
+      }
+    });
+
+    return res.json({
+      keyId,
+      razorpayOrderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency || 'INR'
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: 'Failed to create Razorpay order', error: error.message });
+  }
+});
+
+app.post('/payment/razorpay/verify-and-place', async (req, res) => {
+  try {
+    const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const { studentID, items } = req.body || {};
+    const razorpayOrderId = String(req.body?.razorpay_order_id || '').trim();
+    const razorpayPaymentId = String(req.body?.razorpay_payment_id || '').trim();
+    const razorpaySignature = String(req.body?.razorpay_signature || '').trim();
+
+    if (!canID || !studentID || !Array.isArray(items) || !items.length) {
+      return res.status(400).json({ message: 'canID, studentID and items are required' });
+    }
+    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+      return res.status(400).json({ message: 'Razorpay payment fields are required' });
+    }
+
+    const { keyId, keySecret } = getRazorpayCredentials();
+    const expectedSignature = crypto
+      .createHmac('sha256', keySecret)
+      .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+      .digest('hex');
+    const signatureMatched = (
+      expectedSignature.length === razorpaySignature.length &&
+      crypto.timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(razorpaySignature))
+    );
+    if (!signatureMatched) {
+      return res.status(400).json({ message: 'Invalid payment signature' });
+    }
+
+    const payment = await callRazorpay(`/payments/${encodeURIComponent(razorpayPaymentId)}`, {
+      method: 'GET',
+      keyId,
+      keySecret
+    });
+    const normalizedStatus = String(payment?.status || '').toLowerCase();
+    if (payment?.order_id !== razorpayOrderId || !['captured', 'authorized'].includes(normalizedStatus)) {
+      return res.status(400).json({ message: 'Payment is not valid for this order' });
+    }
+
+    const { total } = await buildValidatedOrderInput({ canID, studentID, items });
+    const expectedAmount = toPaise(total);
+    if (Number(payment?.amount || 0) !== expectedAmount) {
+      return res.status(400).json({ message: 'Paid amount does not match current order total' });
+    }
+
+    const order = await createOrderWithDailyToken({ canID, studentID, items });
+    emitOrderEvent('newOrder', order);
+    return res.status(201).json({
+      message: 'Payment verified and order placed',
+      order
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: 'Failed to verify payment and place order', error: error.message });
   }
 });
 
@@ -1042,7 +1215,7 @@ app.patch('/order/:id/status', async (req, res) => {
     const updated = await Order.findByIdAndUpdate(
       req.params.id,
       { status },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (!updated) {
@@ -1081,7 +1254,7 @@ app.patch('/admin/staff/:id/review', async (req, res) => {
     const staff = await Staff.findOneAndUpdate(
       { _id: req.params.id, canteenId: canID },
       { status: nextStatus },
-      { new: true }
+      { returnDocument: 'after' }
     ).select('-password');
 
     if (!staff) {
@@ -1103,11 +1276,11 @@ app.patch('/api/orders/:id/mark-ready', async (req, res) => {
     if (!order.dailyToken) {
       order.dailyToken = await generateUniqueDailyToken({
         canID: order.canID,
-        orderDate: order.orderDate || formatOrderDateKey(order.createdAt || new Date())
+        orderDate: toOrderDate(order.orderDate || order.createdAt || new Date())
       });
     }
     if (!order.orderDate) {
-      order.orderDate = formatOrderDateKey(order.createdAt || new Date());
+      order.orderDate = toOrderDate(order.createdAt || new Date());
     }
     if (!order.pickupToken) {
       order.pickupToken = await generateUniquePickupToken();
@@ -1143,10 +1316,19 @@ async function verifyOrderAndMarkDelivered({ orderId, token, canteenId, date }) 
     throw error;
   }
 
+  const parsedOrderDate = parseOrderDateKey(normalizedDate);
+  if (!parsedOrderDate) {
+    const error = new Error('date must be in YYYY-MM-DD format');
+    error.status = 400;
+    throw error;
+  }
+  const nextDate = new Date(parsedOrderDate.getTime());
+  nextDate.setDate(nextDate.getDate() + 1);
+
   const existing = await Order.findOne({
     orderID: normalizedOrderId,
     canID: normalizedCanteenId,
-    orderDate: normalizedDate,
+    orderDate: { $gte: parsedOrderDate, $lt: nextDate },
     dailyToken: normalizedToken
   })
     .populate('studentID', 'name email')
@@ -1230,7 +1412,7 @@ app.post('/api/orders/scan', async (req, res) => {
         qrToken: scannedToken
       },
       { status: 'Delivered' },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('studentID', 'name email');
 
     if (!updated) {
@@ -1285,3 +1467,4 @@ connectDB().then(() => {
     console.log(`Server running on http://${HOST}:${PORT}`);
   });
 });
+
