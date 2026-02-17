@@ -979,7 +979,7 @@ body {
   }
 
   .s-payment-layout {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     align-items: start;
   }
 
