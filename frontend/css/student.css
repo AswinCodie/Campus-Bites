@@ -91,6 +91,10 @@ body {
   font-size: 24px;
 }
 
+body[data-page="student-login"] .s-brand h1 {
+  color: var(--s-primary);
+}
+
 .s-brand-mark {
   width: 34px;
   height: 34px;
@@ -199,7 +203,6 @@ body {
   text-decoration: none;
   color: var(--s-text);
   font-weight: 700;
-  padding-bottom: 20px;
 }
 
 .s-search-wrap {
@@ -979,7 +982,7 @@ body {
   }
 
   .s-payment-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     align-items: start;
   }
 

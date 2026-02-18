@@ -23,6 +23,7 @@ const STUDENT_ROUTES = {
 
 const NOTIFY_ROOT_ID = 'appNotifyRoot';
 const NOTIFY_STYLE_ID = 'appNotifyStyle';
+const STUDENT_ORDER_CONFIRMED_SNACK_KEY = 'studentOrderConfirmedSnack';
 
 function ensureNotifySystem() {
   if (!document.getElementById(NOTIFY_STYLE_ID)) {
@@ -48,7 +49,7 @@ function ensureNotifySystem() {
       @keyframes snackOut { to { transform: translateY(-8px); opacity: 0; } }
       @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
       @media (max-width: 640px) {
-        #${NOTIFY_ROOT_ID} .notify-snack-wrap { left: 12px; right: 12px; top: auto; bottom: 12px; width: auto; }
+        #${NOTIFY_ROOT_ID} .notify-snack-wrap { left: 12px; right: 12px; top: auto; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); width: auto; }
       }
     `;
     document.head.appendChild(style);
@@ -1687,6 +1688,7 @@ async function initStudentPaymentPage() {
             });
 
             localStorage.setItem('studentLastOrderID', response.order?.orderID || '');
+            sessionStorage.setItem(STUDENT_ORDER_CONFIRMED_SNACK_KEY, '1');
             clearStudentCart();
             window.location.replace(STUDENT_ROUTES.orders);
           } catch (error) {
@@ -1721,6 +1723,10 @@ function initStudentOrderSuccessPage() {
 async function initStudentOrdersPage() {
   const session = requireStudentSession();
   if (!session) return;
+  if (sessionStorage.getItem(STUDENT_ORDER_CONFIRMED_SNACK_KEY) === '1') {
+    sessionStorage.removeItem(STUDENT_ORDER_CONFIRMED_SNACK_KEY);
+    showSnack('Your order confirmed', 'success');
+  }
 
   // Check if student is banned
   if (session.banned) {
