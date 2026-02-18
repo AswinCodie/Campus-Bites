@@ -1688,7 +1688,7 @@ async function initStudentPaymentPage() {
 
             localStorage.setItem('studentLastOrderID', response.order?.orderID || '');
             clearStudentCart();
-            window.location.href = STUDENT_ROUTES.success;
+            window.location.replace(STUDENT_ROUTES.orders);
           } catch (error) {
             showSnack(error.message || 'Payment verification failed', 'error');
             if (payBtn) payBtn.disabled = false;

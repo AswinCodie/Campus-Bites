@@ -219,10 +219,20 @@ function buildOrderQrPayload({ orderID, dailyToken, canID, orderDate }) {
 }
 
 function getRazorpayCredentials() {
-  const keyId = String(process.env.RAZORPAY_KEY_ID || '').trim();
-  const keySecret = String(process.env.RAZORPAY_KEY_SECRET || '').trim();
+  const readEnv = (names) => {
+    for (const name of names) {
+      const raw = process.env[name];
+      const value = String(raw || '').trim().replace(/^['"]|['"]$/g, '');
+      if (value) return value;
+    }
+    return '';
+  };
+  const keyId = readEnv(['RAZORPAY_KEY_ID', 'RAZORPAY_KEYID', 'RAZORPAY_KEY']);
+  const keySecret = readEnv(['RAZORPAY_KEY_SECRET', 'RAZORPAY_SECRET', 'RAZORPAY_KEYSECRET']);
   if (!keyId || !keySecret) {
-    const error = new Error('Razorpay is not configured on server');
+    const error = new Error(
+      'Razorpay is not configured on server. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in environment.'
+    );
     error.status = 500;
     throw error;
   }
@@ -1168,7 +1178,10 @@ app.post('/payment/razorpay/order', requireStudentAuth, async (req, res) => {
       currency: razorpayOrder.currency || 'INR'
     });
   } catch (error) {
-    return res.status(error.status || 500).json({ message: 'Failed to create Razorpay order', error: error.message });
+    return res.status(error.status || 500).json({
+      message: error.message || 'Failed to create Razorpay order',
+      error: error.message
+    });
   }
 });
 
