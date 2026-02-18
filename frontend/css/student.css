@@ -76,6 +76,10 @@ body {
     padding-top: 16px;
     padding-bottom: 28px;
   }
+
+  body[data-page^="student-"]:not([data-page="student-home"]) .s-topbar {
+    display: none;
+  }
 }
 
 .s-brand {
@@ -207,6 +211,37 @@ body[data-page="student-login"] .s-brand h1 {
 
 .s-search-wrap {
   width: 100%;
+}
+
+.s-search-shell {
+  position: relative;
+}
+
+.s-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.s-search-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.s-search-wrap .s-search {
+  border-radius: 999px;
+  padding-left: 44px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
 .s-desktop-nav {
@@ -698,6 +733,55 @@ body[data-page="student-login"] .s-brand h1 {
   color: #475569;
 }
 
+.s-orders-filter-row {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.s-order-filter-btn {
+  justify-content: center;
+  gap: 0;
+  min-height: 40px;
+}
+
+.s-order-date-group {
+  display: grid;
+  gap: 10px;
+}
+
+.s-order-filter-btn .s-chip-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.s-order-filter-btn.is-active[data-filter="Preparing"] {
+  border-color: #fdba74;
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.s-order-filter-btn.is-active[data-filter="Ready"] {
+  border-color: #93c5fd;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.s-order-filter-btn.is-active[data-filter="Delivered"] {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.s-order-date-heading {
+  margin: 4px 2px 0;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
 .s-order-item {
   padding: 14px;
 }
@@ -951,6 +1035,10 @@ body[data-page="student-login"] .s-brand h1 {
 
   .s-profile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .s-orders-filter-row {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

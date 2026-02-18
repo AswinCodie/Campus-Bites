@@ -42,7 +42,15 @@
 
     <section class="s-home-controls">
       <div class="s-search-wrap">
-        <input id="studentSearchInput" class="s-search" type="search" placeholder="Search food, drinks, snacks..." />
+        <div class="s-search-shell">
+          <span class="s-search-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="M20 20L16.65 16.65"></path>
+            </svg>
+          </span>
+          <input id="studentSearchInput" class="s-search" type="search" placeholder="Search food, drinks, snacks..." />
+        </div>
       </div>
 
       <div class="s-filter-row" id="studentFilterGroup">

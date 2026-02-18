@@ -53,6 +53,10 @@ body {
   padding-bottom: 88px;
 }
 
+body.is-scan-view .staff-wrap {
+  padding-bottom: 140px;
+}
+
 .staff-card {
   background: var(--staff-surface);
   border: 1px solid var(--staff-border);
@@ -75,8 +79,12 @@ body {
 .staff-title {
   margin: 0 0 8px;
   font-size: 28px;
-    padding-top: 10px;
+}
 
+.staff-title-with-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .staff-muted {
@@ -119,6 +127,70 @@ body {
 .staff-btn-secondary {
   background: #e2e8f0;
   color: #0f172a;
+}
+
+.staff-login .staff-login-card {
+  animation: staffAuthCardIn 420ms ease-out both;
+}
+
+.staff-login .staff-title,
+.staff-login .staff-muted,
+.staff-login .staff-status-line {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: staffAuthFadeUp 360ms ease-out both;
+}
+
+.staff-login .staff-title { animation-delay: 80ms; }
+.staff-login .staff-muted { animation-delay: 130ms; }
+.staff-login .staff-status-line { animation-delay: 280ms; }
+
+.staff-login .staff-form .staff-input,
+.staff-login .staff-form .staff-btn {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: staffAuthFadeUp 360ms ease-out both;
+}
+
+.staff-login .staff-form .staff-input:nth-child(1) { animation-delay: 170ms; }
+.staff-login .staff-form .staff-input:nth-child(2) { animation-delay: 220ms; }
+.staff-login .staff-form .staff-input:nth-child(3) { animation-delay: 270ms; }
+.staff-login .staff-form .staff-input:nth-child(4) { animation-delay: 320ms; }
+.staff-login .staff-form .staff-btn { animation-delay: 360ms; }
+
+@keyframes staffAuthCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes staffAuthFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-login .staff-login-card,
+  .staff-login .staff-title,
+  .staff-login .staff-muted,
+  .staff-login .staff-status-line,
+  .staff-login .staff-form .staff-input,
+  .staff-login .staff-form .staff-btn {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .staff-header {
@@ -267,6 +339,26 @@ body {
   font-weight: 800;
 }
 
+.order-id-block {
+  min-width: 0;
+}
+
+.order-token-large {
+  margin: 0;
+  font-size: 36px;
+  line-height: 0.95;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  color: #0f172a;
+}
+
+.order-id-small {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--staff-muted);
+}
+
 .order-chip {
   border-radius: 999px;
   padding: 5px 10px;
@@ -400,4 +492,3 @@ body.is-scan-view #staffLogoutBtn {
     font-size: 14px;
   }
 }
-

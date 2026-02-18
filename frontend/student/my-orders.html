@@ -38,6 +38,29 @@
       <p>Track your order history and live status.</p>
     </section>
 
+    <section class="s-orders-filter-row" id="studentOrdersFilterBar">
+      <button class="s-btn s-btn-chip s-order-filter-btn is-active" data-filter="all" type="button" aria-label="All orders" title="All">
+        <span class="s-chip-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 12h16"/><path d="M12 4v16"/></svg>
+        </span>
+      </button>
+      <button class="s-btn s-btn-chip s-order-filter-btn" data-filter="Preparing" type="button" aria-label="Processing orders" title="Processing">
+        <span class="s-chip-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+        </span>
+      </button>
+      <button class="s-btn s-btn-chip s-order-filter-btn" data-filter="Ready" type="button" aria-label="Ready orders" title="Ready">
+        <span class="s-chip-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="m5 12 4 4 10-10"/></svg>
+        </span>
+      </button>
+      <button class="s-btn s-btn-chip s-order-filter-btn" data-filter="Delivered" type="button" aria-label="Delivered orders" title="Delivered">
+        <span class="s-chip-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M3 7h15"/><path d="M16 7l3 5v5H8V7z"/><circle cx="10.5" cy="17" r="1.5"/><circle cx="16.5" cy="17" r="1.5"/></svg>
+        </span>
+      </button>
+    </section>
+
     <section id="studentOrdersList" class="s-stack"></section>
   </main>
 

@@ -24,6 +24,10 @@ const STUDENT_ROUTES = {
 const NOTIFY_ROOT_ID = 'appNotifyRoot';
 const NOTIFY_STYLE_ID = 'appNotifyStyle';
 const STUDENT_ORDER_CONFIRMED_SNACK_KEY = 'studentOrderConfirmedSnack';
+const GLOBAL_LOADER_STYLE_ID = 'globalLoaderStyle';
+const GLOBAL_LOADER_ID = 'globalLoader';
+let globalLoaderActiveRequests = 0;
+let globalLoaderShowTimer = null;
 
 function ensureNotifySystem() {
   if (!document.getElementById(NOTIFY_STYLE_ID)) {
@@ -101,6 +105,97 @@ function showPopupAlert(message, type = 'info', title = '') {
   modal.addEventListener('click', (e) => {
     if (e.target === modal) close();
   });
+}
+
+function ensureGlobalLoader() {
+  if (!document.getElementById(GLOBAL_LOADER_STYLE_ID)) {
+    const style = document.createElement('style');
+    style.id = GLOBAL_LOADER_STYLE_ID;
+    style.textContent = `
+      #${GLOBAL_LOADER_ID} {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgba(2, 6, 23, 0.28);
+        backdrop-filter: blur(2px);
+        z-index: 100000;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity .2s ease, visibility .2s ease;
+        pointer-events: none;
+      }
+      #${GLOBAL_LOADER_ID}.is-visible {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+      }
+      #${GLOBAL_LOADER_ID} .loader-card {
+        min-width: 120px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 14px 28px rgba(15, 23, 42, .18);
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+      }
+      #${GLOBAL_LOADER_ID} .loader-spinner {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        border: 3px solid #fed7aa;
+        border-top-color: #f97316;
+        animation: loaderSpin .85s linear infinite;
+      }
+      #${GLOBAL_LOADER_ID} .loader-text {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        color: #334155;
+      }
+      @keyframes loaderSpin { to { transform: rotate(360deg); } }
+    `;
+    document.head.appendChild(style);
+  }
+
+  let node = document.getElementById(GLOBAL_LOADER_ID);
+  if (!node) {
+    node = document.createElement('div');
+    node.id = GLOBAL_LOADER_ID;
+    node.innerHTML = `
+      <div class="loader-card" role="status" aria-live="polite" aria-label="Loading">
+        <div class="loader-spinner"></div>
+        <p class="loader-text">Loading...</p>
+      </div>
+    `;
+    document.body.appendChild(node);
+  }
+  return node;
+}
+
+function startGlobalLoader() {
+  globalLoaderActiveRequests += 1;
+  if (globalLoaderActiveRequests > 1) return;
+
+  if (globalLoaderShowTimer) clearTimeout(globalLoaderShowTimer);
+  globalLoaderShowTimer = setTimeout(() => {
+    const node = ensureGlobalLoader();
+    node.classList.add('is-visible');
+  }, 160);
+}
+
+function stopGlobalLoader() {
+  globalLoaderActiveRequests = Math.max(0, globalLoaderActiveRequests - 1);
+  if (globalLoaderActiveRequests > 0) return;
+
+  if (globalLoaderShowTimer) {
+    clearTimeout(globalLoaderShowTimer);
+    globalLoaderShowTimer = null;
+  }
+  const node = document.getElementById(GLOBAL_LOADER_ID);
+  node?.classList.remove('is-visible');
 }
 
 function getCanID() {
@@ -309,7 +404,16 @@ function initAuthPageTransitions() {
 }
 
 async function safeFetch(url, options = {}) {
-  const response = await fetch(url, options);
+  const { showLoader = true, ...fetchOptions } = options || {};
+  if (showLoader) startGlobalLoader();
+  let response;
+  try {
+    response = await fetch(url, fetchOptions);
+  } catch (error) {
+    throw error;
+  } finally {
+    if (showLoader) stopGlobalLoader();
+  }
   const raw = await response.text();
   let data = {};
 
@@ -703,15 +807,41 @@ async function initStudentsPage() {
   const closeModal = document.getElementById('closeModal');
   const closeModalBtn = document.getElementById('closeModalBtn');
   const banStudentBtn = document.getElementById('banStudentBtn');
+  const studentSearchInput = document.getElementById('studentSearchAdmin');
+  let allStudents = [];
+
+  function applyStudentSearchFilter() {
+    const query = String(studentSearchInput?.value || '').trim().toLowerCase();
+    if (!query) {
+      renderStudents(allStudents);
+      return;
+    }
+    const filtered = allStudents.filter((student) => {
+      const haystack = [
+        student?.name,
+        student?.email,
+        student?.mobile,
+        student?.classSemester,
+        student?.admissionNumber
+      ]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ');
+      return haystack.includes(query);
+    });
+    renderStudents(filtered);
+  }
 
   async function loadStudents() {
     try {
       const students = await safeFetch(`${API_BASE}/students/${canID}`);
-      renderStudents(students);
+      allStudents = Array.isArray(students) ? students : [];
+      applyStudentSearchFilter();
     } catch (error) {
       alert(error.message);
     }
   }
+
+  studentSearchInput?.addEventListener('input', applyStudentSearchFilter);
 
   // Close modal
   closeModal.addEventListener('click', () => {
@@ -888,19 +1018,34 @@ async function initOrdersPage() {
   applyAdminHeaderIdentity(canID);
   let isLoadingOrders = false;
   let ordersPollTimer = null;
+  let allOrders = [];
+  const orderIdSearchInput = document.getElementById('orderIdSearch');
+
+  function applyOrderIdFilter() {
+    const query = String(orderIdSearchInput?.value || '').trim().toLowerCase();
+    if (!query) {
+      renderOrders(allOrders);
+      return;
+    }
+    const filtered = allOrders.filter((order) => String(order?.orderID || '').toLowerCase().includes(query));
+    renderOrders(filtered);
+  }
 
   async function loadOrders() {
     if (isLoadingOrders) return;
     isLoadingOrders = true;
     try {
-      const orders = await safeFetch(`${API_BASE}/orders/${canID}`);
-      renderOrders(orders);
+      const orders = await safeFetch(`${API_BASE}/orders/${canID}`, { showLoader: false });
+      allOrders = Array.isArray(orders) ? orders : [];
+      applyOrderIdFilter();
     } catch (error) {
       alert(error.message);
     } finally {
       isLoadingOrders = false;
     }
   }
+
+  orderIdSearchInput?.addEventListener('input', applyOrderIdFilter);
 
   document.getElementById('ordersBody').addEventListener('click', async (e) => {
     const button = e.target.closest('button');
@@ -1257,7 +1402,10 @@ async function initStudentPortalPage() {
     if (isLoadingOrders) return;
     isLoadingOrders = true;
     try {
-      const orders = await safeFetch(`${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`);
+      const orders = await safeFetch(
+        `${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`,
+        { showLoader: false }
+      );
       renderStudentOrders(orders);
     } catch (_) {
       // keep polling silently for transient network errors
@@ -1738,24 +1886,58 @@ async function initStudentOrdersPage() {
   const container = document.getElementById('studentOrdersList');
   const modal = document.getElementById('orderQrModal');
   const closeBtn = document.getElementById('orderQrModalClose');
+  const filterBar = document.getElementById('studentOrdersFilterBar');
+  const filterButtons = Array.from(document.querySelectorAll('#studentOrdersFilterBar .s-order-filter-btn'));
   updateStudentCartBadge();
   let isLoadingOrders = false;
   let ordersPollTimer = null;
   let currentOrders = [];
+  let activeOrderFilter = 'all';
 
-  async function loadStudentOrders() {
-    if (isLoadingOrders) return;
-    isLoadingOrders = true;
-    try {
-      const orders = await safeFetch(`${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`);
-      currentOrders = Array.isArray(orders) ? orders : [];
-      if (!container) return;
-      if (!currentOrders.length) {
-        container.innerHTML = '<div class="s-card s-empty">No orders yet.</div>';
-        return;
-      }
+  function formatOrderDateLabel(order) {
+    const raw = order?.orderDate || order?.createdAt;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return 'Unknown Date';
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  }
 
-      container.innerHTML = currentOrders.map((order) => {
+  function applyOrderFilterButtons() {
+    filterButtons.forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.filter === activeOrderFilter);
+    });
+  }
+
+  function renderStudentOrders() {
+    if (!container) return;
+
+    const filteredOrders = activeOrderFilter === 'all'
+      ? currentOrders
+      : currentOrders.filter((order) => order.status === activeOrderFilter);
+
+    if (!filteredOrders.length) {
+      container.innerHTML = '<div class="s-card s-empty">No orders found.</div>';
+      return;
+    }
+
+    const groups = filteredOrders.reduce((acc, order) => {
+      const key = formatOrderDateLabel(order);
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(order);
+      return acc;
+    }, {});
+
+    const orderedKeys = Object.keys(groups).sort((a, b) => {
+      if (a === 'Unknown Date') return 1;
+      if (b === 'Unknown Date') return -1;
+      return new Date(groups[b][0].createdAt).getTime() - new Date(groups[a][0].createdAt).getTime();
+    });
+
+    container.innerHTML = orderedKeys.map((dateKey) => {
+      const orderCards = groups[dateKey].map((order) => {
         const itemsText = order.items
           .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
           .join(', ');
@@ -1777,12 +1959,37 @@ async function initStudentOrdersPage() {
           </article>
         `;
       }).join('');
+
+      return `
+        <section class="s-order-date-group">
+          <h2 class="s-order-date-heading">${escapeHtml(dateKey)}</h2>
+          <div class="s-stack">${orderCards}</div>
+        </section>
+      `;
+    }).join('');
+  }
+
+  async function loadStudentOrders() {
+    if (isLoadingOrders) return;
+    isLoadingOrders = true;
+    try {
+      const orders = await safeFetch(`${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`);
+      currentOrders = Array.isArray(orders) ? orders : [];
+      renderStudentOrders();
     } catch (_) {
       // keep polling silently for transient network errors
     } finally {
       isLoadingOrders = false;
     }
   }
+
+  filterBar?.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-filter]');
+    if (!button) return;
+    activeOrderFilter = button.dataset.filter || 'all';
+    applyOrderFilterButtons();
+    renderStudentOrders();
+  });
 
   loadStudentOrders();
   ordersPollTimer = setInterval(loadStudentOrders, 5000);
@@ -2021,7 +2228,8 @@ function initStudentBanWatcher() {
     isCheckingBan = true;
     try {
       const data = await safeFetch(
-        `${API_BASE}/student/session/${session.studentID}?canID=${encodeURIComponent(session.canID)}`
+        `${API_BASE}/student/session/${session.studentID}?canID=${encodeURIComponent(session.canID)}`,
+        { showLoader: false }
       );
 
       if (data?.banned) {

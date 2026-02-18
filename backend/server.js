@@ -14,6 +14,7 @@ const Canteen = require('./Canteen');
 const User = require('./User');
 const Food = require('./Food');
 const Order = require('./Order');
+const Payment = require('./Payment');
 const Staff = require('./Staff');
 const {
   generateUniquePickupToken,
@@ -373,6 +374,25 @@ function ensureStaffDashboardAuth(req, res, next) {
     return res.redirect('/staff/login');
   }
   return next();
+}
+
+async function ensurePaymentIndexes() {
+  try {
+    const indexes = await Payment.collection.indexes();
+    const oldRazorpayPaymentIndex = indexes.find((index) => (
+      index?.name === 'razorpay_payment_id_1' &&
+      index?.unique === true &&
+      !index?.partialFilterExpression
+    ));
+
+    if (oldRazorpayPaymentIndex) {
+      await Payment.collection.dropIndex('razorpay_payment_id_1');
+    }
+
+    await Payment.syncIndexes();
+  } catch (error) {
+    console.error('Payment index sync warning:', error.message);
+  }
 }
 
 app.post('/api/staff/login', async (req, res) => {
@@ -1171,6 +1191,24 @@ app.post('/payment/razorpay/order', requireStudentAuth, async (req, res) => {
       }
     });
 
+    await Payment.findOneAndUpdate(
+      {
+        razorpay_order_id: razorpayOrder.id,
+        userId: studentID
+      },
+      {
+        orderId: null,
+        userId: studentID,
+        razorpay_order_id: razorpayOrder.id,
+        amount: Number(razorpayOrder.amount || amount),
+        currency: razorpayOrder.currency || 'INR',
+        status: 'created',
+        paidAt: null,
+        canID
+      },
+      { upsert: true, setDefaultsOnInsert: true, returnDocument: 'after' }
+    );
+
     return res.json({
       keyId,
       razorpayOrderId: razorpayOrder.id,
@@ -1232,7 +1270,31 @@ app.post('/payment/razorpay/verify-and-place', requireStudentAuth, async (req, r
       return res.status(400).json({ message: 'Paid amount does not match current order total' });
     }
 
+    const isPaidState = ['captured', 'authorized'].includes(normalizedStatus);
+    const paymentRecord = await Payment.findOneAndUpdate(
+      {
+        razorpay_order_id: razorpayOrderId,
+        userId: studentID
+      },
+      {
+        userId: studentID,
+        razorpay_order_id: razorpayOrderId,
+        razorpay_payment_id: razorpayPaymentId,
+        amount: Number(payment?.amount || expectedAmount),
+        currency: String(payment?.currency || 'INR'),
+        status: isPaidState ? normalizedStatus : 'failed',
+        paidAt: isPaidState ? new Date() : null,
+        canID
+      },
+      { upsert: true, setDefaultsOnInsert: true, returnDocument: 'after' }
+    );
+
     const order = await createOrderWithDailyToken({ canID, studentID, items });
+    await Payment.findByIdAndUpdate(
+      paymentRecord._id,
+      { orderId: order.orderID },
+      { returnDocument: 'after' }
+    );
     emitOrderEvent('newOrder', order);
     return res.status(201).json({
       message: 'Payment verified and order placed',
@@ -1240,6 +1302,30 @@ app.post('/payment/razorpay/verify-and-place', requireStudentAuth, async (req, r
     });
   } catch (error) {
     return res.status(error.status || 500).json({ message: 'Failed to verify payment and place order', error: error.message });
+  }
+});
+
+app.get('/payment/history/:studentID', requireStudentAuth, async (req, res) => {
+  try {
+    const studentID = String(req.params?.studentID || '').trim();
+    const canID = String(req.query?.canID || '').trim();
+    if (!canID) {
+      return res.status(400).json({ message: 'canID is required as query parameter' });
+    }
+    if (studentID !== req.studentSession.studentId || canID !== req.studentSession.canID) {
+      return res.status(403).json({ message: 'Session does not match requested student data' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(studentID)) {
+      return res.status(400).json({ message: 'Invalid studentID' });
+    }
+
+    const payments = await Payment.find({ userId: studentID, canID })
+      .sort({ createdAt: -1 })
+      .select('orderId userId razorpay_order_id razorpay_payment_id amount currency status paidAt createdAt updatedAt');
+
+    return res.json(payments);
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to load payment history', error: error.message });
   }
 });
 
@@ -1584,7 +1670,8 @@ app.get('/staff/dashboard', ensureStaffDashboardAuth, (req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, 'staff-dashboard.html'));
 });
 
-connectDB().then(() => {
+connectDB().then(async () => {
+  await ensurePaymentIndexes();
   server.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
   });

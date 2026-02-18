@@ -20,6 +20,10 @@ const STAFF_ROUTES = {
   dashboard: '/staff/dashboard'
 };
 const STAFF_STATUS_ORDER = { Preparing: 0, Ready: 1, Delivered: 2 };
+const STAFF_LOADER_STYLE_ID = 'staffGlobalLoaderStyle';
+const STAFF_LOADER_ID = 'staffGlobalLoader';
+let staffLoaderActiveRequests = 0;
+let staffLoaderShowTimer = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -34,19 +38,110 @@ function formatCurrency(value) {
   return `\u20B9${Number(value || 0).toFixed(2)}`;
 }
 
+function ensureStaffLoader() {
+  if (!document.getElementById(STAFF_LOADER_STYLE_ID)) {
+    const style = document.createElement('style');
+    style.id = STAFF_LOADER_STYLE_ID;
+    style.textContent = `
+      #${STAFF_LOADER_ID} {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgba(2, 6, 23, 0.28);
+        backdrop-filter: blur(2px);
+        z-index: 100000;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity .2s ease, visibility .2s ease;
+        pointer-events: none;
+      }
+      #${STAFF_LOADER_ID}.is-visible {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+      }
+      #${STAFF_LOADER_ID} .loader-card {
+        min-width: 120px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 14px 28px rgba(15, 23, 42, .18);
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+      }
+      #${STAFF_LOADER_ID} .loader-spinner {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        border: 3px solid #bae6fd;
+        border-top-color: #0ea5e9;
+        animation: staffLoaderSpin .85s linear infinite;
+      }
+      #${STAFF_LOADER_ID} .loader-text {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        color: #334155;
+      }
+      @keyframes staffLoaderSpin { to { transform: rotate(360deg); } }
+    `;
+    document.head.appendChild(style);
+  }
+
+  let node = document.getElementById(STAFF_LOADER_ID);
+  if (!node) {
+    node = document.createElement('div');
+    node.id = STAFF_LOADER_ID;
+    node.innerHTML = `
+      <div class="loader-card" role="status" aria-live="polite" aria-label="Loading">
+        <div class="loader-spinner"></div>
+        <p class="loader-text">Loading...</p>
+      </div>
+    `;
+    document.body.appendChild(node);
+  }
+  return node;
+}
+
+function startStaffLoader() {
+  staffLoaderActiveRequests += 1;
+  if (staffLoaderActiveRequests > 1) return;
+  if (staffLoaderShowTimer) clearTimeout(staffLoaderShowTimer);
+  staffLoaderShowTimer = setTimeout(() => {
+    ensureStaffLoader().classList.add('is-visible');
+  }, 160);
+}
+
+function stopStaffLoader() {
+  staffLoaderActiveRequests = Math.max(0, staffLoaderActiveRequests - 1);
+  if (staffLoaderActiveRequests > 0) return;
+  if (staffLoaderShowTimer) {
+    clearTimeout(staffLoaderShowTimer);
+    staffLoaderShowTimer = null;
+  }
+  document.getElementById(STAFF_LOADER_ID)?.classList.remove('is-visible');
+}
+
 async function staffFetch(url, options = {}) {
+  const { showLoader = true, ...fetchOptions } = options || {};
   let response;
+  if (showLoader) startStaffLoader();
   try {
     response = await fetch(url, {
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(options.headers || {})
+        ...(fetchOptions.headers || {})
       },
-      ...options
+      ...fetchOptions
     });
   } catch (_) {
     throw new Error(`Unable to reach API (${STAFF_API_BASE}). Ensure backend is running and reachable.`);
+  } finally {
+    if (showLoader) stopStaffLoader();
   }
 
   const raw = await response.text();
@@ -169,7 +264,10 @@ async function initStaffDashboardPage() {
     return `
       <article class="order-card" data-order-id="${order._id}" data-order-code="${escapeHtml(order.orderID)}">
         <div class="order-head">
-          <p class="order-id">${escapeHtml(order.orderID)}</p>
+          <div class="order-id-block">
+            <p class="order-token-large">${escapeHtml(order.dailyToken || '----')}</p>
+            <p class="order-id-small">${escapeHtml(order.orderID)}</p>
+          </div>
           <span class="order-chip ${statusClass}">${escapeHtml(order.status)}</span>
         </div>
         <p class="order-items">${escapeHtml(itemsText)}</p>
@@ -315,13 +413,13 @@ async function initStaffDashboardPage() {
       const result = await verifyScannedPayload(payload);
       if (result.ok) {
         renderScanResult(result.data.order, 'Order marked as Delivered.');
-        await loadOrders();
+        await loadOrders(false);
         return;
       }
 
       if (result.status === 409 && result.data?.message === 'Order already delivered') {
         renderScanResult(result.data.order || null, 'Order already delivered');
-        await loadOrders();
+        await loadOrders(false);
         return;
       }
 
@@ -424,10 +522,11 @@ async function initStaffDashboardPage() {
     }
   }
 
-  async function loadOrders() {
+  async function loadOrders(showLoader = false) {
     if (!staffSession?.canteenId) return;
     const orders = await staffFetch(
-      `${STAFF_API_BASE}/api/orders?canteenId=${encodeURIComponent(staffSession.canteenId)}`
+      `${STAFF_API_BASE}/api/orders?canteenId=${encodeURIComponent(staffSession.canteenId)}`,
+      { showLoader }
     );
     ordersCache = Array.isArray(orders) ? orders : [];
     renderOrders();
@@ -456,11 +555,11 @@ async function initStaffDashboardPage() {
     });
     socket.on('newOrder', ({ order }) => {
       if (!order || order.canID !== staffSession?.canteenId) return;
-      loadOrders().catch(() => {});
+      loadOrders(false).catch(() => {});
     });
     socket.on('orderUpdated', ({ order }) => {
       if (!order || order.canID !== staffSession?.canteenId) return;
-      loadOrders().catch(() => {});
+      loadOrders(false).catch(() => {});
     });
   }
 
@@ -477,11 +576,11 @@ async function initStaffDashboardPage() {
   }
 
   renderScanResult(null, 'No scan yet.');
-  await loadOrders();
+  await loadOrders(true);
   setupSocket();
 
   pollTimer = setInterval(() => {
-    loadOrders().catch(() => {});
+    loadOrders(false).catch(() => {});
   }, 7000);
 
   ordersBoardEl.addEventListener('click', async (event) => {
