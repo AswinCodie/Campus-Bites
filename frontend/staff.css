@@ -290,6 +290,19 @@ body.is-scan-view .staff-wrap {
   font-size: 14px;
 }
 
+.staff-status-line a {
+  color: #0f766e;
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(15, 118, 110, 0.35);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.staff-status-line a:hover {
+  color: #115e59;
+  border-bottom-color: rgba(17, 94, 89, 0.7);
+}
+
 .orders-list {
   display: grid;
   gap: 10px;
