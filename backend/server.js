@@ -47,6 +47,10 @@ const STUDENT_PAGE_FILE_MAP = {
   profile: 'profile.html'
 };
 
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 const sessionSecret = String(process.env.SESSION_SECRET || '').trim();
 if (!sessionSecret) {
   throw new Error('SESSION_SECRET is required');
