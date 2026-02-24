@@ -567,8 +567,8 @@ async function initStaffDashboardPage() {
     const me = await staffFetch(`${STAFF_API_BASE}/api/staff/me`);
     staffSession = me.session;
     identityEl.innerHTML = `
-  <div>${staffSession.name} (${staffSession.email})</div>
-  <div>Canteen: ${staffSession.canteenId}</div>
+  <div>${escapeHtml(staffSession.name || '')} (${escapeHtml(staffSession.email || '')})</div>
+  <div>Canteen: ${escapeHtml(staffSession.canteenId || '')}</div>
 `;
   } catch (_) {
     window.location.href = STAFF_ROUTES.login;

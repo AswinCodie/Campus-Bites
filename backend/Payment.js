@@ -26,7 +26,7 @@ paymentSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      razorpay_payment_id: { $type: 'string', $ne: '' }
+      razorpay_payment_id: { $type: 'string' }
     }
   }
 );

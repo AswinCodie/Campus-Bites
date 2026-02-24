@@ -5,7 +5,11 @@ const PICKUP_TOKEN_REGEX = /^\d{4}$/;
 const DEFAULT_QR_TOKEN_EXPIRES_IN = '2h';
 
 function getQrSecret() {
-  return process.env.QR_JWT_SECRET || process.env.JWT_SECRET || 'change-me-qr-jwt-secret';
+  const secret = String(process.env.QR_JWT_SECRET || process.env.JWT_SECRET || process.env.SESSION_SECRET || '').trim();
+  if (!secret) {
+    throw new Error('QR_JWT_SECRET (or JWT_SECRET/SESSION_SECRET) is required');
+  }
+  return secret;
 }
 
 function createPickupToken() {

@@ -47,14 +47,37 @@ const STUDENT_PAGE_FILE_MAP = {
   profile: 'profile.html'
 };
 
+const sessionSecret = String(process.env.SESSION_SECRET || '').trim();
+if (!sessionSecret) {
+  throw new Error('SESSION_SECRET is required');
+}
+
+const corsOriginsFromEnv = String(process.env.CORS_ORIGIN || process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+function isAllowedOrigin(origin, req) {
+  if (!origin) return true;
+  if (corsOriginsFromEnv.length > 0) {
+    return corsOriginsFromEnv.includes(origin);
+  }
+  const reqHost = String(req.headers.host || '').trim();
+  if (!reqHost) return false;
+  const sameOriginHttp = `http://${reqHost}`;
+  const sameOriginHttps = `https://${reqHost}`;
+  if (origin === sameOriginHttp || origin === sameOriginHttps) return true;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+}
+
 const sessionMiddleware = session({
-  secret: process.env.SESSION_SECRET || 'change-me-session-secret',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 1000 * 60 * 60 * 8
   }
 });
@@ -66,10 +89,44 @@ const io = new Server(server, {
   }
 });
 
-app.use(cors({ credentials: true, origin: true }));
+app.use((req, res, next) => {
+  const requestOrigin = String(req.headers.origin || '').trim();
+  if (!isAllowedOrigin(requestOrigin, req)) {
+    return res.status(403).json({ message: 'CORS origin not allowed' });
+  }
+  const corsDelegate = cors({
+    credentials: true,
+    origin: true
+  });
+  return corsDelegate(req, res, next);
+});
 app.use(express.json());
 app.use(sessionMiddleware);
 app.use('/assets', express.static(ASSETS_DIR));
+
+app.use((req, res, next) => {
+  const method = String(req.method || 'GET').toUpperCase();
+  const isWriteMethod = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+  if (!isWriteMethod) return next();
+
+  const origin = String(req.headers.origin || '').trim();
+  const referer = String(req.headers.referer || '').trim();
+  const originAllowed = !origin || isAllowedOrigin(origin, req);
+  let refererAllowed = true;
+  if (referer) {
+    try {
+      const refererOrigin = new URL(referer).origin;
+      refererAllowed = isAllowedOrigin(refererOrigin, req);
+    } catch (_) {
+      refererAllowed = false;
+    }
+  }
+
+  if (!originAllowed || !refererAllowed) {
+    return res.status(403).json({ message: 'CSRF validation failed' });
+  }
+  return next();
+});
 
 function ensureStudentPageAuth(req, res, next) {
   if (req.method !== 'GET') {
@@ -360,6 +417,42 @@ function requireStaffAuth(req, res, next) {
   return next();
 }
 
+function requireAdminAuth(req, res, next) {
+  const adminSession = req.session?.admin;
+  if (!adminSession?.adminId || !adminSession?.canID) {
+    return res.status(401).json({ message: 'Admin authentication required' });
+  }
+  req.adminSession = adminSession;
+  return next();
+}
+
+function requireAdminOrStaffAuth(req, res, next) {
+  const staffSession = req.session?.staff;
+  if (staffSession?.staffId && staffSession?.canteenId) {
+    req.staffSession = staffSession;
+    return next();
+  }
+  const adminSession = req.session?.admin;
+  if (adminSession?.adminId && adminSession?.canID) {
+    req.adminSession = adminSession;
+    return next();
+  }
+  return res.status(401).json({ message: 'Authentication required' });
+}
+
+function requireAnySessionAuth(req, res, next) {
+  const studentSession = req.session?.student;
+  if (studentSession?.studentId && studentSession?.canID) {
+    req.studentSession = studentSession;
+    return next();
+  }
+  return requireAdminOrStaffAuth(req, res, next);
+}
+
+function getSessionCanID(req) {
+  return req.staffSession?.canteenId || req.adminSession?.canID || req.studentSession?.canID || '';
+}
+
 function requireStudentAuth(req, res, next) {
   const studentSession = req.session?.student;
   if (!studentSession?.studentId || !studentSession?.canID) {
@@ -626,6 +719,14 @@ app.post('/admin/signup', async (req, res) => {
       canID
     });
 
+    req.session.admin = {
+      adminId: String(canteen._id),
+      canID: canteen.canID,
+      email: canteen.email,
+      collegeName: canteen.collegeName,
+      loginAt: new Date().toISOString()
+    };
+
     return res.status(201).json({
       message: 'Admin signup successful',
       canID: canteen.canID,
@@ -664,6 +765,14 @@ app.post('/admin/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    req.session.admin = {
+      adminId: String(canteen._id),
+      canID: canteen.canID,
+      email: canteen.email,
+      collegeName: canteen.collegeName,
+      loginAt: new Date().toISOString()
+    };
 
     return res.json({
       message: 'Login successful',
@@ -852,9 +961,12 @@ app.post('/student/logout', (req, res) => {
   });
 });
 
-app.get('/admin/dashboard/:canID', async (req, res) => {
+app.get('/admin/dashboard/:canID', requireAdminAuth, async (req, res) => {
   try {
     const { canID } = req.params;
+    if (canID !== req.adminSession.canID) {
+      return res.status(403).json({ message: 'Cannot access another canteen dashboard' });
+    }
     const [foodCount, orderCount, studentCount] = await Promise.all([
       Food.countDocuments({ canID }),
       Order.countDocuments({ canID }),
@@ -867,9 +979,12 @@ app.get('/admin/dashboard/:canID', async (req, res) => {
   }
 });
 
-app.get('/admin/analytics/:canID', async (req, res) => {
+app.get('/admin/analytics/:canID', requireAdminAuth, async (req, res) => {
   try {
     const { canID } = req.params;
+    if (canID !== req.adminSession.canID) {
+      return res.status(403).json({ message: 'Cannot access another canteen analytics' });
+    }
     const canIDFilter = { canID };
 
     const startOfMonth = new Date();
@@ -937,21 +1052,29 @@ app.get('/admin/analytics/:canID', async (req, res) => {
   }
 });
 
-app.get('/foods/:canID', async (req, res) => {
+app.get('/foods/:canID', requireAnySessionAuth, async (req, res) => {
   try {
-    const foods = await Food.find({ canID: req.params.canID }).sort({ name: 1 });
+    const requestedCanID = String(req.params.canID || '').trim();
+    const sessionCanID = getSessionCanID(req);
+    if (!requestedCanID || requestedCanID !== sessionCanID) {
+      return res.status(403).json({ message: 'Cannot access foods from another canteen' });
+    }
+    const foods = await Food.find({ canID: requestedCanID }).sort({ name: 1 });
     return res.json(foods);
   } catch (error) {
     return res.status(500).json({ message: 'Failed to load foods', error: error.message });
   }
 });
 
-app.post('/food/add', async (req, res) => {
+app.post('/food/add', requireAdminAuth, async (req, res) => {
   try {
     const { canID, name, price, inStock, category, imageUrl } = req.body;
 
     if (!canID || !name || price === undefined) {
       return res.status(400).json({ message: 'canID, name, and price are required' });
+    }
+    if (String(canID) !== req.adminSession.canID) {
+      return res.status(403).json({ message: 'Cannot add food for another canteen' });
     }
 
     const food = await Food.create({
@@ -969,9 +1092,9 @@ app.post('/food/add', async (req, res) => {
   }
 });
 
-app.delete('/food/:id', async (req, res) => {
+app.delete('/food/:id', requireAdminAuth, async (req, res) => {
   try {
-    const deleted = await Food.findByIdAndDelete(req.params.id);
+    const deleted = await Food.findOneAndDelete({ _id: req.params.id, canID: req.adminSession.canID });
     if (!deleted) {
       return res.status(404).json({ message: 'Food not found' });
     }
@@ -981,7 +1104,7 @@ app.delete('/food/:id', async (req, res) => {
   }
 });
 
-app.patch('/food/:id', async (req, res) => {
+app.patch('/food/:id', requireAdminAuth, async (req, res) => {
   try {
     const updates = {};
     if (req.body.name !== undefined) {
@@ -1000,7 +1123,11 @@ app.patch('/food/:id', async (req, res) => {
       updates.imageUrl = normalizeImageUrl(req.body.imageUrl);
     }
 
-    const updated = await Food.findByIdAndUpdate(req.params.id, updates, { returnDocument: 'after' });
+    const updated = await Food.findOneAndUpdate(
+      { _id: req.params.id, canID: req.adminSession.canID },
+      updates,
+      { returnDocument: 'after' }
+    );
     if (!updated) {
       return res.status(404).json({ message: 'Food not found' });
     }
@@ -1011,18 +1138,22 @@ app.patch('/food/:id', async (req, res) => {
   }
 });
 
-app.get('/students/:canID', async (req, res) => {
+app.get('/students/:canID', requireAdminAuth, async (req, res) => {
   try {
-    const students = await User.find({ canID: req.params.canID }).select('-password').sort({ name: 1 });
+    const requestedCanID = String(req.params.canID || '').trim();
+    if (requestedCanID !== req.adminSession.canID) {
+      return res.status(403).json({ message: 'Cannot access students from another canteen' });
+    }
+    const students = await User.find({ canID: requestedCanID }).select('-password').sort({ name: 1 });
     return res.json(students);
   } catch (error) {
     return res.status(500).json({ message: 'Failed to load students', error: error.message });
   }
 });
 
-app.delete('/student/:id', async (req, res) => {
+app.delete('/student/:id', requireAdminAuth, async (req, res) => {
   try {
-    const deleted = await User.findByIdAndDelete(req.params.id);
+    const deleted = await User.findOneAndDelete({ _id: req.params.id, canID: req.adminSession.canID });
     if (!deleted) {
       return res.status(404).json({ message: 'Student not found' });
     }
@@ -1032,16 +1163,16 @@ app.delete('/student/:id', async (req, res) => {
   }
 });
 
-app.patch('/student/:id/ban', async (req, res) => {
+app.patch('/student/:id/ban', requireAdminAuth, async (req, res) => {
   try {
-    const student = await User.findById(req.params.id);
+    const student = await User.findOne({ _id: req.params.id, canID: req.adminSession.canID });
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
 
     const isBanned = !student.banned;
     const updated = await User.findByIdAndUpdate(
-      req.params.id,
+      { _id: req.params.id, canID: req.adminSession.canID },
       { 
         banned: isBanned,
         bannedAt: isBanned ? new Date() : null
@@ -1289,12 +1420,62 @@ app.post('/payment/razorpay/verify-and-place', requireStudentAuth, async (req, r
       { upsert: true, setDefaultsOnInsert: true, returnDocument: 'after' }
     );
 
-    const order = await createOrderWithDailyToken({ canID, studentID, items });
-    await Payment.findByIdAndUpdate(
-      paymentRecord._id,
-      { orderId: order.orderID },
+    const existingOrderId = String(paymentRecord?.orderId || '').trim();
+    if (existingOrderId && !existingOrderId.startsWith('LOCK:')) {
+      const existingOrder = await Order.findOne({ orderID: existingOrderId, canID, studentID });
+      if (existingOrder) {
+        return res.status(201).json({
+          message: 'Payment verified and order placed',
+          order: existingOrder
+        });
+      }
+    }
+
+    const lockToken = `LOCK:${Date.now()}:${randomToken(6)}`;
+    const lockedPayment = await Payment.findOneAndUpdate(
+      {
+        _id: paymentRecord._id,
+        $or: [{ orderId: null }, { orderId: '' }]
+      },
+      { orderId: lockToken },
       { returnDocument: 'after' }
     );
+
+    if (!lockedPayment) {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const latestPayment = await Payment.findById(paymentRecord._id).select('orderId');
+        const latestOrderId = String(latestPayment?.orderId || '').trim();
+        if (latestOrderId && !latestOrderId.startsWith('LOCK:')) {
+          const existingOrder = await Order.findOne({ orderID: latestOrderId, canID, studentID });
+          if (existingOrder) {
+            return res.status(201).json({
+              message: 'Payment verified and order placed',
+              order: existingOrder
+            });
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+      return res.status(409).json({ message: 'Payment is already being processed' });
+    }
+
+    let order;
+    try {
+      order = await createOrderWithDailyToken({ canID, studentID, items });
+      await Payment.findOneAndUpdate(
+        { _id: paymentRecord._id, orderId: lockToken },
+        { orderId: order.orderID },
+        { returnDocument: 'after' }
+      );
+    } catch (error) {
+      await Payment.findOneAndUpdate(
+        { _id: paymentRecord._id, orderId: lockToken },
+        { orderId: null },
+        { returnDocument: 'after' }
+      );
+      throw error;
+    }
+
     emitOrderEvent('newOrder', order);
     return res.status(201).json({
       message: 'Payment verified and order placed',
@@ -1329,9 +1510,13 @@ app.get('/payment/history/:studentID', requireStudentAuth, async (req, res) => {
   }
 });
 
-app.post('/api/orders/create', async (req, res) => {
+app.post('/api/orders/create', requireAdminOrStaffAuth, async (req, res) => {
   try {
     const canID = String(req.body?.canID || req.body?.canteenId || '').trim();
+    const sessionCanID = req.staffSession?.canteenId || req.adminSession?.canID || '';
+    if (!canID || canID !== sessionCanID) {
+      return res.status(403).json({ message: 'Cannot create order for another canteen' });
+    }
     const { studentID, items } = req.body;
     const order = await createOrderWithDailyToken({ canID, studentID, items });
     emitOrderEvent('newOrder', order);
@@ -1341,9 +1526,14 @@ app.post('/api/orders/create', async (req, res) => {
   }
 });
 
-app.get('/orders/:canID', async (req, res) => {
+app.get('/orders/:canID', requireAdminOrStaffAuth, async (req, res) => {
   try {
-    const orders = await Order.find({ canID: req.params.canID })
+    const requestedCanID = String(req.params.canID || '').trim();
+    const sessionCanID = req.staffSession?.canteenId || req.adminSession?.canID || '';
+    if (!requestedCanID || requestedCanID !== sessionCanID) {
+      return res.status(403).json({ message: 'Cannot access orders from another canteen' });
+    }
+    const orders = await Order.find({ canID: requestedCanID })
       .populate('studentID', 'name email')
       .populate('items.foodID', 'name price')
       .sort({ createdAt: -1 });
@@ -1411,7 +1601,7 @@ app.get('/student/session/:studentID', requireStudentAuth, async (req, res) => {
   }
 });
 
-app.patch('/order/:id/status', async (req, res) => {
+app.patch('/order/:id/status', requireAdminOrStaffAuth, async (req, res) => {
   try {
     const { status } = req.body;
     const allowed = VALID_ORDER_STATUSES;
@@ -1420,8 +1610,9 @@ app.patch('/order/:id/status', async (req, res) => {
       return res.status(400).json({ message: 'Invalid status value' });
     }
 
-    const updated = await Order.findByIdAndUpdate(
-      req.params.id,
+    const sessionCanID = req.staffSession?.canteenId || req.adminSession?.canID || '';
+    const updated = await Order.findOneAndUpdate(
+      { _id: req.params.id, canID: sessionCanID },
       { status },
       { returnDocument: 'after' }
     );
@@ -1437,9 +1628,13 @@ app.patch('/order/:id/status', async (req, res) => {
   }
 });
 
-app.get('/admin/staffs/:canID', async (req, res) => {
+app.get('/admin/staffs/:canID', requireAdminAuth, async (req, res) => {
   try {
-    const staffs = await Staff.find({ canteenId: req.params.canID })
+    const requestedCanID = String(req.params.canID || '').trim();
+    if (requestedCanID !== req.adminSession.canID) {
+      return res.status(403).json({ message: 'Cannot access staffs from another canteen' });
+    }
+    const staffs = await Staff.find({ canteenId: requestedCanID })
       .select('-password')
       .sort({ createdAt: -1 });
     return res.json(staffs);
@@ -1448,7 +1643,7 @@ app.get('/admin/staffs/:canID', async (req, res) => {
   }
 });
 
-app.patch('/admin/staff/:id/review', async (req, res) => {
+app.patch('/admin/staff/:id/review', requireAdminAuth, async (req, res) => {
   try {
     const action = String(req.body?.action || '').trim().toLowerCase();
     const canID = String(req.body?.canID || '').trim();
@@ -1458,6 +1653,9 @@ app.patch('/admin/staff/:id/review', async (req, res) => {
     }
     if (!canID) {
       return res.status(400).json({ message: 'canID is required' });
+    }
+    if (canID !== req.adminSession.canID) {
+      return res.status(403).json({ message: 'Cannot review staff from another canteen' });
     }
     const staff = await Staff.findOneAndUpdate(
       { _id: req.params.id, canteenId: canID },
@@ -1474,9 +1672,10 @@ app.patch('/admin/staff/:id/review', async (req, res) => {
   }
 });
 
-app.patch('/api/orders/:id/mark-ready', async (req, res) => {
+app.patch('/api/orders/:id/mark-ready', requireAdminOrStaffAuth, async (req, res) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const sessionCanID = req.staffSession?.canteenId || req.adminSession?.canID || '';
+    const order = await Order.findOne({ _id: req.params.id, canID: sessionCanID });
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
@@ -1563,12 +1762,22 @@ async function verifyOrderAndMarkDelivered({ orderId, token, canteenId, date }) 
   };
 }
 
-app.get('/api/orders/verify', async (req, res) => {
+app.get('/api/orders/verify', requireAdminOrStaffAuth, async (req, res) => {
   try {
+    const token = String(req.query?.token || '').trim();
+    if (!/^\d{4}$/.test(token)) {
+      return res.status(400).json({ message: 'Invalid token format' });
+    }
+    const canteenId = String(req.query?.canteenId || '').trim();
+    const sessionCanID = req.staffSession?.canteenId || req.adminSession?.canID || '';
+    if (!canteenId || canteenId !== sessionCanID) {
+      return res.status(403).json({ message: 'Cannot verify another canteen order' });
+    }
+    res.set('Cache-Control', 'no-store');
     const result = await verifyOrderAndMarkDelivered({
       orderId: req.query?.orderId,
-      token: req.query?.token,
-      canteenId: req.query?.canteenId,
+      token,
+      canteenId,
       date: req.query?.date
     });
     return res.status(result.status).json(result.body);
@@ -1577,7 +1786,7 @@ app.get('/api/orders/verify', async (req, res) => {
   }
 });
 
-app.post('/api/orders/scan', async (req, res) => {
+app.post('/api/orders/scan', requireAdminOrStaffAuth, async (req, res) => {
   try {
     const scannedToken = String(req.body?.token || '').trim();
     if (!scannedToken) {
@@ -1590,6 +1799,10 @@ app.post('/api/orders/scan', async (req, res) => {
         parsed = JSON.parse(scannedToken);
       } catch (_) {
         return res.status(400).json({ message: 'Invalid QR JSON payload' });
+      }
+      const sessionCanID = req.staffSession?.canteenId || req.adminSession?.canID || '';
+      if (String(parsed.canteenId || '').trim() !== sessionCanID) {
+        return res.status(403).json({ message: 'Cannot verify another canteen order' });
       }
       const result = await verifyOrderAndMarkDelivered({
         orderId: parsed.orderId,
@@ -1610,6 +1823,10 @@ app.post('/api/orders/scan', async (req, res) => {
 
     if (payload?.type !== 'order_pickup' || !payload?.orderId || !payload?.canID) {
       return res.status(401).json({ message: 'Invalid QR token payload' });
+    }
+    const sessionCanID = req.staffSession?.canteenId || req.adminSession?.canID || '';
+    if (String(payload.canID || '').trim() !== sessionCanID) {
+      return res.status(403).json({ message: 'Cannot verify another canteen order' });
     }
 
     const updated = await Order.findOneAndUpdate(

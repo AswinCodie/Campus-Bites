@@ -599,15 +599,18 @@ async function initDashboardPage() {
 
     tbody.innerHTML = recent.map((order) => {
       const itemsText = order.items
-        .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+        .map((item) => `${escapeHtml(item.foodID?.name || 'Unknown')} x ${Number(item.quantity || 0)}`)
         .join(', ');
+      const orderId = escapeHtml(order.orderID || '');
+      const studentName = escapeHtml(order.studentID?.name || 'Unknown');
+      const status = escapeHtml(order.status || 'Preparing');
       return `
         <tr>
-          <td>${order.orderID}</td>
-          <td>${order.studentID?.name || 'Unknown'}</td>
+          <td>${orderId}</td>
+          <td>${studentName}</td>
           <td>${itemsText}</td>
           <td>${formatCurrency(order.total)}</td>
-          <td><span class="status-badge ${getStatusClass(order.status)}">${order.status}</span></td>
+          <td><span class="status-badge ${getStatusClass(order.status)}">${status}</span></td>
         </tr>
       `;
     }).join('');
@@ -757,11 +760,11 @@ function renderStudents(students) {
       ? '<span class="status-badge status-banned">Banned</span>'
       : '<span class="status-badge status-active">Active</span>';
     tr.innerHTML = `
-      <td>${student.name}</td>
-      <td>${student.email}</td>
-      <td>${student.mobile}</td>
-      <td>${student.classSemester}</td>
-      <td>${student.admissionNumber}</td>
+      <td>${escapeHtml(student.name || '')}</td>
+      <td>${escapeHtml(student.email || '')}</td>
+      <td>${escapeHtml(student.mobile || '')}</td>
+      <td>${escapeHtml(student.classSemester || '')}</td>
+      <td>${escapeHtml(student.admissionNumber || '')}</td>
       <td>${statusBadge}</td>
       <td><button class="btn ${student.banned ? 'btn-success' : 'btn-danger'} btn-small" data-id="${student._id}" onclick="event.stopPropagation()">${student.banned ? 'Unban' : 'Ban'}</button></td>
     `;
@@ -988,16 +991,19 @@ function renderOrders(orders) {
 
     groups[dateKey].forEach((order) => {
       const itemsText = order.items
-        .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+        .map((item) => `${escapeHtml(item.foodID?.name || 'Unknown')} x ${Number(item.quantity || 0)}`)
         .join(', ');
+      const orderId = escapeHtml(order.orderID || '');
+      const studentName = escapeHtml(order.studentID?.name || 'Unknown');
+      const status = escapeHtml(order.status || 'Preparing');
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>${order.orderID}</td>
-        <td>${order.studentID?.name || 'Unknown'}</td>
+        <td>${orderId}</td>
+        <td>${studentName}</td>
         <td>${itemsText}</td>
         <td>${formatCurrency(order.total)}</td>
-        <td><span class="status-badge ${getStatusClass(order.status)}">${order.status}</span></td>
+        <td><span class="status-badge ${getStatusClass(order.status)}">${status}</span></td>
         <td>
           <div class="btn-group">
             <button class="btn btn-small ${order.status === 'Preparing' ? 'btn-primary' : 'btn-secondary'}" data-id="${order._id}" data-status="Preparing">Preparing</button>
@@ -1329,19 +1335,21 @@ function renderStudentOrders(orders) {
 
   container.innerHTML = orders.map((order) => {
     const itemsText = order.items
-      .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+      .map((item) => `${escapeHtml(item.foodID?.name || 'Unknown')} x ${Number(item.quantity || 0)}`)
       .join(', ');
     const statusClass = order.status === 'Ready'
       ? 'chip-ready'
       : order.status === 'Delivered'
         ? 'chip-delivered'
         : 'chip-preparing';
+    const orderId = escapeHtml(order.orderID || '');
+    const status = escapeHtml(order.status || 'Preparing');
 
     return `
       <article class="order-card">
         <div class="order-top">
-          <p class="order-id">Order ID: ${order.orderID}</p>
-          <span class="chip ${statusClass}">${order.status}</span>
+          <p class="order-id">Order ID: ${orderId}</p>
+          <span class="chip ${statusClass}">${status}</span>
         </div>
         <p class="order-items">${itemsText}</p>
         <p class="order-total">Total: ${formatCurrency(order.total)}</p>
@@ -1379,7 +1387,7 @@ async function initStudentPortalPage() {
     cartContainer.innerHTML = cart.map((item) => `
       <article class="cart-item">
         <div>
-          <p class="cart-item-title">${item.name}</p>
+          <p class="cart-item-title">${escapeHtml(item.name || '')}</p>
           <p class="cart-item-meta">${formatCurrency(item.price)} x ${item.quantity}</p>
         </div>
         <button class="btn btn-soft" type="button" data-action="remove-cart-item" data-id="${item.foodID}">Remove</button>
@@ -1679,7 +1687,7 @@ function renderCartPage() {
       list.innerHTML = items.map((item) => `
         <article class="s-card s-cart-item">
           <div>
-            <h3>${item.name}</h3>
+            <h3>${escapeHtml(item.name || '')}</h3>
             <p>${formatCurrency(item.price)} each</p>
           </div>
           <div class="s-cart-actions">
@@ -1741,7 +1749,7 @@ function renderPaymentSummary() {
     } else {
       summary.innerHTML = items.map((item) => `
         <div class="s-summary-row">
-          <span>${item.name} x ${item.quantity}</span>
+          <span>${escapeHtml(item.name || '')} x ${Number(item.quantity || 0)}</span>
           <strong>${formatCurrency(Number(item.price) * Number(item.quantity))}</strong>
         </div>
       `).join('');
@@ -1939,7 +1947,7 @@ async function initStudentOrdersPage() {
     container.innerHTML = orderedKeys.map((dateKey) => {
       const orderCards = groups[dateKey].map((order) => {
         const itemsText = order.items
-          .map((item) => `${item.foodID?.name || 'Unknown'} x ${item.quantity}`)
+          .map((item) => `${escapeHtml(item.foodID?.name || 'Unknown')} x ${Number(item.quantity || 0)}`)
           .join(', ');
         const displayStatus = order.status === 'Preparing' ? 'Processing' : order.status;
         const statusClass = order.status === 'Ready'
@@ -1947,12 +1955,14 @@ async function initStudentOrdersPage() {
           : order.status === 'Delivered'
             ? 's-chip-success'
             : 's-chip-warn';
+        const orderId = escapeHtml(order.orderID || '');
+        const safeDisplayStatus = escapeHtml(displayStatus || 'Preparing');
 
         return `
           <article class="s-card s-order-item" data-order-id="${order._id}">
             <div class="s-order-head">
-              <h3>${order.orderID}</h3>
-              <span class="s-chip ${statusClass}">${displayStatus}</span>
+              <h3>${orderId}</h3>
+              <span class="s-chip ${statusClass}">${safeDisplayStatus}</span>
             </div>
             <p>${itemsText}</p>
             <p class="s-order-total">${formatCurrency(order.total)}</p>
@@ -1973,7 +1983,10 @@ async function initStudentOrdersPage() {
     if (isLoadingOrders) return;
     isLoadingOrders = true;
     try {
-      const orders = await safeFetch(`${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`);
+      const orders = await safeFetch(
+        `${API_BASE}/student/orders/${session.studentID}?canID=${encodeURIComponent(session.canID)}`,
+        { showLoader: false }
+      );
       currentOrders = Array.isArray(orders) ? orders : [];
       renderStudentOrders();
     } catch (_) {
